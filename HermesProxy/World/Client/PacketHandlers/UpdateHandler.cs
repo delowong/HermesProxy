@@ -87,7 +87,11 @@ namespace HermesProxy.World.Client
                     case UpdateTypeLegacy.CreateObject1:
                     {
                         var oldGuid = packet.ReadPackedGuid();
-
+                        if (oldGuid.GetEntry() == 613393)
+                        {
+                            Log.Print(LogType.Debug, $"Debug target found: {oldGuid}");
+                        }
+                        
                         // workaround for lack of dynamic guids on private servers
                         if (oldGuid.GetHighType() == HighGuidType.Creature || oldGuid.GetHighType() == HighGuidType.GameObject)
                         {
@@ -136,6 +140,10 @@ namespace HermesProxy.World.Client
                     case UpdateTypeLegacy.CreateObject2:
                     {
                         var oldGuid = packet.ReadPackedGuid();
+                        if (oldGuid.GetEntry() == 613393)
+                        {
+                            Log.Print(LogType.Debug, $"Debug target found: {oldGuid}");
+                        }
 
                         // workaround for lack of dynamic guids on private servers
                         if (oldGuid.GetHighType() == HighGuidType.Creature || oldGuid.GetHighType() == HighGuidType.GameObject)
