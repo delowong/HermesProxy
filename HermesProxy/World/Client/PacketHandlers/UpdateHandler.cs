@@ -87,6 +87,7 @@ namespace HermesProxy.World.Client
                     case UpdateTypeLegacy.CreateObject1:
                     {
                         var oldGuid = packet.ReadPackedGuid();
+                        Log.Print(LogType.Debug, $"Debug guid: {oldGuid}");
                         if (oldGuid.GetEntry() == 613393)
                         {
                             Log.Print(LogType.Debug, $"Debug target found: {oldGuid}");
@@ -140,6 +141,7 @@ namespace HermesProxy.World.Client
                     case UpdateTypeLegacy.CreateObject2:
                     {
                         var oldGuid = packet.ReadPackedGuid();
+                        Log.Print(LogType.Debug, $"Debug guid: {oldGuid}");
                         if (oldGuid.GetEntry() == 613393)
                         {
                             Log.Print(LogType.Debug, $"Debug target found: {oldGuid}");
