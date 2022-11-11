@@ -28,7 +28,7 @@ namespace HermesProxy.World.Server
                 AuctionHelloResponse auction = new AuctionHelloResponse();
                 auction.Guid = newGuid.To128(GetSession().GameState);
                 auction.AuctionHouseID = 7;
-                SendPacketToClient(auction);
+                SendPacket(auction);
             }
         }
 
