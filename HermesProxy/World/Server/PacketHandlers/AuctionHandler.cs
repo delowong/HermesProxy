@@ -19,8 +19,11 @@ namespace HermesProxy.World.Server
             Log.Print(LogType.Debug, $"MSG_AUCTION_HELLO: {oriGuid}");
             WowGuid64 newGuid = new WowGuid64(oriGuid.GetHighGuidTypeLegacy(), 15677, 569);
             Log.Print(LogType.Debug, $"MSG_AUCTION_HELLO: replaced by {newGuid}");
-            packet.WriteGuid(newGuid);
+            packet.WriteGuid(oriGuid);
             SendPacketToServer(packet);
+            
+//             AuctionHelloResponse auction = new AuctionHelloResponse();
+//             Log.Print(LogType.Debug, $"MSG_AUCTION_HELLO: {oriGuid}");
         }
 
         // Handlers for CMSG opcodes coming from the modern client
