@@ -21,7 +21,7 @@ namespace HermesProxy.World.Client
             auction.AuctionHouseID = packet.ReadUInt32();
             if (LegacyVersion.AddedInVersion(ClientVersionBuild.V3_3_0_10958))
                 auction.OpenForBusiness = packet.ReadBool();
-            Log.Print(LogType.Debug, $"Auction: {auction}");
+            Log.Print(LogType.Debug, $"Auction guid: {auction.Guid} auction house id: {auction.AuctionHouseID}");
             SendPacketToClient(auction);
 
             // Have to send this again here, or server does not reply for some reason.
