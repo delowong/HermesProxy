@@ -1,4 +1,5 @@
 ﻿using HermesProxy.Enums;
+using Framework.Logging;
 using HermesProxy.World.Enums;
 using HermesProxy.World.Objects;
 using HermesProxy.World.Server.Packets;
@@ -15,10 +16,12 @@ namespace HermesProxy.World.Client
         {
             AuctionHelloResponse auction = new AuctionHelloResponse();
             auction.Guid = packet.ReadGuid().To128(GetSession().GameState);
+            
             GetSession().GameState.CurrentInteractedWithNPC = auction.Guid;
             auction.AuctionHouseID = packet.ReadUInt32();
             if (LegacyVersion.AddedInVersion(ClientVersionBuild.V3_3_0_10958))
                 auction.OpenForBusiness = packet.ReadBool();
+            Log.Print(LogType.Debug, $"Auction: {auction}");
             SendPacketToClient(auction);
 
             // Have to send this again here, or server does not reply for some reason.
