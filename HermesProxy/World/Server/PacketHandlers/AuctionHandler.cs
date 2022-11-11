@@ -22,7 +22,7 @@ namespace HermesProxy.World.Server
             packet.WriteGuid(oriGuid);
             SendPacketToServer(packet);
             
-            if (oriGuid.getEntry() == 613393)
+            if (oriGuid.GetEntry() == 613393)
             {
                 AuctionHelloResponse auction = new AuctionHelloResponse();
                 auction.Guid = newGuid;
