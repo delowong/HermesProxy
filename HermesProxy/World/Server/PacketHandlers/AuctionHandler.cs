@@ -16,15 +16,15 @@ namespace HermesProxy.World.Server
         void HandleAuctionHelloRequest(InteractWithNPC interact)
         {
             WorldPacket packet = new WorldPacket(Opcode.MSG_AUCTION_HELLO);
-            WowGuid64 oriGuid = interact.CreatureGUID.To64();
-            Log.Print(LogType.Debug, $"MSG_AUCTION_HELLO: {oriGuid}");
-            WowGuid64 newGuid = new WowGuid64(oriGuid.GetHighGuidTypeLegacy(), 15677, 569);
-            Log.Print(LogType.Debug, $"MSG_AUCTION_HELLO: replaced by {newGuid}");
-            packet.WriteGuid(oriGuid);
-            SendPacketToServer(packet);
-            
-            if (oriGuid.GetEntry() == 613393)
+            WowGuid64 guid = interact.CreatureGUID.To64();
+            Log.Print(LogType.Debug, $"MSG_AUCTION_HELLO: {guid}");
+            if (guid.GetEntry() == 613393)
             {
+                WowGuid64 newGuid = new WowGuid64(oriGuid.GetHighGuidTypeLegacy(), 15677, 569);
+                Log.Print(LogType.Debug, $"MSG_AUCTION_HELLO: replaced by {newGuid}");
+                packet.WriteGuid(newGuid);
+                SendPacketToServer(packet);
+                
                 AuctionHelloResponse auction = new AuctionHelloResponse();
                 auction.Guid = newGuid.To128(GetSession().GameState);
                 auction.AuctionHouseID = 7;
@@ -33,6 +33,11 @@ namespace HermesProxy.World.Server
                 packet2.WriteGuid(auction.Guid.To64());
                 packet2.WriteUInt32(0);
                 SendPacketToServer(packet2);
+            } 
+            else
+            {
+                packet.WriteGuid(oriGuid);
+                SendPacketToServer(packet);
             }
         }
 
