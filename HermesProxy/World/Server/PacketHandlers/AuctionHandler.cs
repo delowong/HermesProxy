@@ -29,6 +29,10 @@ namespace HermesProxy.World.Server
                 auction.Guid = newGuid.To128(GetSession().GameState);
                 auction.AuctionHouseID = 7;
                 SendPacket(auction);
+                WorldPacket packet2 = new WorldPacket(Opcode.CMSG_AUCTION_LIST_OWNED_ITEMS);
+                packet2.WriteGuid(auction.Guid.To64());
+                packet2.WriteUInt32(0);
+                SendPacketToServer(packet2);
             }
         }
 
