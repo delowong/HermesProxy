@@ -25,7 +25,7 @@ namespace HermesProxy.World.Server
             if (oriGuid.GetEntry() == 613393)
             {
                 AuctionHelloResponse auction = new AuctionHelloResponse();
-                auction.Guid = newGuid;
+                auction.Guid = newGuid.To128(GetSession().GameState);
                 auction.AuctionHouseID = 7;
                 SendPacketToClient(auction);
             }
