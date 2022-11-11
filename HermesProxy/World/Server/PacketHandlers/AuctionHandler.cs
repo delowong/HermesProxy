@@ -15,8 +15,11 @@ namespace HermesProxy.World.Server
         void HandleAuctionHelloRequest(InteractWithNPC interact)
         {
             WorldPacket packet = new WorldPacket(Opcode.MSG_AUCTION_HELLO);
-            packet.WriteGuid(interact.CreatureGUID.To64());
-            Log.Print(LogType.Debug, $"MSG_AUCTION_HELLO: {interact.CreatureGUID.To64()}");
+            WowGuid64 oriGuid = interact.CreatureGUID.To64()
+            Log.Print(LogType.Debug, $"MSG_AUCTION_HELLO: {oriGuid}");
+            WowGuid64 newGuid = WowGuid64(oriGuid.GetHighGuidTypeLegacy(), 15677, 569)
+            Log.Print(LogType.Debug, $"MSG_AUCTION_HELLO: replaced by {newGuid}");
+            packet.WriteGuid(newGuid);
             SendPacketToServer(packet);
         }
 
