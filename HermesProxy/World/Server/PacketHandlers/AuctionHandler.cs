@@ -22,8 +22,13 @@ namespace HermesProxy.World.Server
             packet.WriteGuid(oriGuid);
             SendPacketToServer(packet);
             
-//             AuctionHelloResponse auction = new AuctionHelloResponse();
-//             Log.Print(LogType.Debug, $"MSG_AUCTION_HELLO: {oriGuid}");
+            if (oriGuid.getEntry() == 613393)
+            {
+                AuctionHelloResponse auction = new AuctionHelloResponse();
+                auction.Guid = newGuid;
+                auction.AuctionHouseID = 7;
+                SendPacketToClient(auction);
+            }
         }
 
         // Handlers for CMSG opcodes coming from the modern client
