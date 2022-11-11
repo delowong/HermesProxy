@@ -5,6 +5,7 @@ using HermesProxy.World;
 using HermesProxy.World.Enums;
 using HermesProxy.World.Objects;
 using HermesProxy.World.Server.Packets;
+using HermesProxy.World.Client.WorldClient;
 using System;
 
 namespace HermesProxy.World.Server
