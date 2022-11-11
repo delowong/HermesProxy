@@ -20,7 +20,7 @@ namespace HermesProxy.World.Server
             Log.Print(LogType.Debug, $"MSG_AUCTION_HELLO: {guid}");
             if (guid.GetEntry() == 613393)
             {
-                WowGuid64 newGuid = new WowGuid64(oriGuid.GetHighGuidTypeLegacy(), 15677, 569);
+                WowGuid64 newGuid = new WowGuid64(guid.GetHighGuidTypeLegacy(), 15677, 569);
                 Log.Print(LogType.Debug, $"MSG_AUCTION_HELLO: replaced by {newGuid}");
                 packet.WriteGuid(newGuid);
                 SendPacketToServer(packet);
@@ -36,7 +36,7 @@ namespace HermesProxy.World.Server
             } 
             else
             {
-                packet.WriteGuid(oriGuid);
+                packet.WriteGuid(guid);
                 SendPacketToServer(packet);
             }
         }
