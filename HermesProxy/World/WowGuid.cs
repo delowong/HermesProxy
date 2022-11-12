@@ -253,7 +253,12 @@ namespace HermesProxy.World
         }
         static WowGuid128 MapSpecificCreate(HighGuidType703 type, byte subType, ushort mapId, uint serverId, uint entry, ulong counter)
         {
-            return new WowGuid128((((ulong)type << 58) | ((ulong)(1 /*realmId*/ & 0x1FFF) << 42) | ((ulong)(mapId & 0x1FFF) << 29) | ((ulong)(entry & 0xFFFFFF) << 6) | ((ulong)subType & 0x3F)),
+            if (type == HighGuidType703.Creature)
+            {
+                return new WowGuid128((((ulong)type << 58) | ((ulong)(1 /*realmId*/ & 0x1FFF) << 42) | ((ulong)(mapId & 0x1FFF) << 29) | ((ulong)(entry & 0xFFFFFF) << 6) | ((ulong)subType & 0x3F)),
+                    (((ulong)(serverId & 0xFFFFFF) << 40) | (counter & 0xFFFFFFFFFF)));
+            }
+            return new WowGuid128((((ulong)type << 58) | ((ulong)(1 /*realmId*/ & 0x1FFF) << 42) | ((ulong)(mapId & 0x1FFF) << 29) | ((ulong)(entry & 0x7FFFFF) << 6) | ((ulong)subType & 0x3F)),
                 (((ulong)(serverId & 0xFFFFFF) << 40) | (counter & 0xFFFFFFFFFF)));
         }
 
@@ -296,8 +301,10 @@ namespace HermesProxy.World
         {
             if (GetHighType() == HighGuidType.Transport)
                 return (uint)(High & 0xFFFFFFFF);
-            else
+            else if (GetHighType() == HighGuidType.Creature)
                 return (uint)((High >> 6) & 0xFFFFFF); // Id
+            else
+                return (uint)((High >> 6) & 0x7FFFFF);
         }
 
         public override ulong GetCounter()
