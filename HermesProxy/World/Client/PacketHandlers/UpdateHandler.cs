@@ -90,7 +90,7 @@ namespace HermesProxy.World.Client
                         Log.Print(LogType.Debug, $"Debug guid: {oldGuid}");
                         if (oldGuid.GetEntry() == 613393)
                         {
-                            Log.Print(LogType.Debug, $"Debug target found: {oldGuid}");
+                            Log.Print(LogType.Debug, $"Create1 target found: {oldGuid}");
                         }
                         
                         // workaround for lack of dynamic guids on private servers
@@ -102,6 +102,10 @@ namespace HermesProxy.World.Client
 
                         var guid = oldGuid.To128(GetSession().GameState);
                         PrintString($"Guid = {guid.ToString()}", i);
+                        if (oldGuid.GetEntry() == 9002001)
+                        {
+                            Log.Print(LogType.Debug, $"Guid128: {guid}");
+                        }
 
                         // workaround for mind vision and mind control
                         // mangos sends a create object for own player upon interrupt
@@ -142,9 +146,9 @@ namespace HermesProxy.World.Client
                     {
                         var oldGuid = packet.ReadPackedGuid();
                         Log.Print(LogType.Debug, $"Debug guid: {oldGuid}");
-                        if (oldGuid.GetEntry() == 613393)
+                        if (oldGuid.GetEntry() == 9002001)
                         {
-                            Log.Print(LogType.Debug, $"Debug target found: {oldGuid}");
+                            Log.Print(LogType.Debug, $"Create1 target found: {oldGuid}");
                         }
 
                         // workaround for lack of dynamic guids on private servers
@@ -153,6 +157,11 @@ namespace HermesProxy.World.Client
 
                         var guid = oldGuid.To128(GetSession().GameState);
                         PrintString($"Guid = {guid.ToString()}", i);
+                        if (oldGuid.GetEntry() == 9002001)
+                        {
+                            Log.Print(LogType.Debug, $"Guid128: {guid}");
+                        }
+
 
                         ObjectUpdate updateData = new ObjectUpdate(guid, UpdateTypeModern.CreateObject2, GetSession());
                         AuraUpdate auraUpdate = new AuraUpdate(guid, true);
