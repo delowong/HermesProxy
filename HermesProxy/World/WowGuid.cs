@@ -297,7 +297,7 @@ namespace HermesProxy.World
             if (GetHighType() == HighGuidType.Transport)
                 return (uint)(High & 0xFFFFFFFF);
             else
-                return (uint)((High >> 6) & 0xFFFFF); // Id
+                return (uint)((High >> 6) & 0xFFFFFF); // Id
         }
 
         public override ulong GetCounter()
