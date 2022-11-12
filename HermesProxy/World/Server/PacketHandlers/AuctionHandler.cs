@@ -18,27 +18,27 @@ namespace HermesProxy.World.Server
             WorldPacket packet = new WorldPacket(Opcode.MSG_AUCTION_HELLO);
             WowGuid64 guid = interact.CreatureGUID.To64();
             Log.Print(LogType.Debug, $"MSG_AUCTION_HELLO: {guid}");
-            if (guid.GetEntry() == 613393)
-            {
-                WowGuid64 newGuid = new WowGuid64(guid.GetHighGuidTypeLegacy(), 15677, 569);
-                Log.Print(LogType.Debug, $"MSG_AUCTION_HELLO: replaced by {newGuid}");
-                packet.WriteGuid(newGuid);
-                SendPacketToServer(packet);
+//             if (guid.GetEntry() == 613393)
+//             {
+//                 WowGuid64 newGuid = new WowGuid64(guid.GetHighGuidTypeLegacy(), 15677, 569);
+//                 Log.Print(LogType.Debug, $"MSG_AUCTION_HELLO: replaced by {newGuid}");
+//                 packet.WriteGuid(newGuid);
+//                 SendPacketToServer(packet);
                 
-                AuctionHelloResponse auction = new AuctionHelloResponse();
-                auction.Guid = newGuid.To128(GetSession().GameState);
-                auction.AuctionHouseID = 7;
-                SendPacket(auction);
-                WorldPacket packet2 = new WorldPacket(Opcode.CMSG_AUCTION_LIST_OWNED_ITEMS);
-                packet2.WriteGuid(auction.Guid.To64());
-                packet2.WriteUInt32(0);
-                SendPacketToServer(packet2);
-            } 
-            else
-            {
-                packet.WriteGuid(guid);
-                SendPacketToServer(packet);
-            }
+//                 AuctionHelloResponse auction = new AuctionHelloResponse();
+//                 auction.Guid = newGuid.To128(GetSession().GameState);
+//                 auction.AuctionHouseID = 7;
+//                 SendPacket(auction);
+//                 WorldPacket packet2 = new WorldPacket(Opcode.CMSG_AUCTION_LIST_OWNED_ITEMS);
+//                 packet2.WriteGuid(auction.Guid.To64());
+//                 packet2.WriteUInt32(0);
+//                 SendPacketToServer(packet2);
+//             } 
+//             else
+//             {
+            packet.WriteGuid(guid);
+            SendPacketToServer(packet);
+//             }
         }
 
         // Handlers for CMSG opcodes coming from the modern client
