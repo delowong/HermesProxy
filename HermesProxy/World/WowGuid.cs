@@ -253,7 +253,7 @@ namespace HermesProxy.World
         }
         static WowGuid128 MapSpecificCreate(HighGuidType703 type, byte subType, ushort mapId, uint serverId, uint entry, ulong counter)
         {
-            if (type == HighGuidType703.Creature)
+            if (type == HighGuidType703.Creature && entry > 9000000)
             {
                 return new WowGuid128((((ulong)type << 58) | ((ulong)(1 /*realmId*/ & 0x1FFF) << 42) | ((ulong)(mapId & 0x1FFF) << 29) | ((ulong)(entry & 0xFFFFFF) << 6) | ((ulong)subType & 0x3F)),
                     (((ulong)(serverId & 0xFFFFFF) << 40) | (counter & 0xFFFFFFFFFF)));
@@ -301,7 +301,7 @@ namespace HermesProxy.World
         {
             if (GetHighType() == HighGuidType.Transport)
                 return (uint)(High & 0xFFFFFFFF);
-            else if (GetHighType() == HighGuidType.Creature)
+            else if (GetHighType() == HighGuidType.Creature && (uint)((High >> 6) & 0xFFFFFF) > 9000000)
                 return (uint)((High >> 6) & 0xFFFFFF); // Id
             else
                 return (uint)((High >> 6) & 0x7FFFFF);
