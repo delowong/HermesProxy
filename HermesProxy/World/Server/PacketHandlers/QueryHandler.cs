@@ -28,6 +28,7 @@ namespace HermesProxy.World.Server
             WorldPacket packet = new WorldPacket(Opcode.CMSG_QUERY_CREATURE);
             packet.WriteUInt32(queryCreature.CreatureID);
             packet.WriteGuid(new WowGuid64(HighGuidTypeLegacy.Creature, queryCreature.CreatureID, 1));
+            Log.Print(LogType.Debug, $"Query creature: {guid}");
             SendPacketToServer(packet);
         }
         [PacketHandler(Opcode.CMSG_QUERY_GAME_OBJECT)]
