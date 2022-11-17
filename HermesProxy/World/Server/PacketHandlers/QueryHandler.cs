@@ -1,4 +1,5 @@
 ﻿using Framework.Constants;
+using Framework.Logging;
 using HermesProxy.World;
 using HermesProxy.World.Enums;
 using HermesProxy.World.Objects;
@@ -28,7 +29,7 @@ namespace HermesProxy.World.Server
             WorldPacket packet = new WorldPacket(Opcode.CMSG_QUERY_CREATURE);
             packet.WriteUInt32(queryCreature.CreatureID);
             packet.WriteGuid(new WowGuid64(HighGuidTypeLegacy.Creature, queryCreature.CreatureID, 1));
-            Log.Print(LogType.Debug, $"Query creature: {guid}");
+            Log.Print(LogType.Debug, $"Query creature: {new WowGuid64(HighGuidTypeLegacy.Creature, queryCreature.CreatureID, 1)}");
             SendPacketToServer(packet);
         }
         [PacketHandler(Opcode.CMSG_QUERY_GAME_OBJECT)]
