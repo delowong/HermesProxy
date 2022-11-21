@@ -32,10 +32,13 @@ using HermesProxy.World.Enums;
 using HermesProxy.World.Server.Packets;
 using static HermesProxy.World.Server.Packets.AuthResponse;
 using System.Net;
+using BNetServer;
+using BNetServer.Services;
+using Google.Protobuf;
 
 namespace HermesProxy.World.Server
 {
-    public partial class WorldSocket : SocketBase
+    public partial class WorldSocket : SocketBase, BnetServices.INetwork
     {
         static readonly string ClientConnectionInitialize = "WORLD OF WARCRAFT CONNECTION - CLIENT TO SERVER - V2";
         static readonly string ServerConnectionInitialize = "WORLD OF WARCRAFT CONNECTION - SERVER TO CLIENT - V2";
@@ -64,6 +67,8 @@ namespace HermesProxy.World.Server
         ConcurrentDictionary<Opcode, PacketHandler> _clientPacketTable = new();
         GlobalSessionData _globalSession;
         System.Threading.Mutex _sendMutex = new System.Threading.Mutex();
+
+        private BnetServices.ServiceManager _bnetRpc;
 
         public WorldSocket(Socket socket) : base(socket)
         {
@@ -244,7 +249,7 @@ namespace HermesProxy.World.Server
 
             Opcode opcode = packet.GetUniversalOpcode(true);
 
-            Log.Print(LogType.Debug, $"Received opcode {opcode.ToString()} ({packet.GetOpcode()}).");
+            Log.PrintNet(LogType.Debug, LogNetDir.C2P, $"Received opcode {opcode.ToString()} ({packet.GetOpcode()}).");
 
             if (opcode != Opcode.CMSG_HOTFIX_REQUEST && !header.IsValidSize())
             {
@@ -257,8 +262,7 @@ namespace HermesProxy.World.Server
                 case Opcode.CMSG_PING:
                     Ping ping = new(packet);
                     ping.Read();
-                    if (_connectType == ConnectionType.Realm &&
-                        GetSession().WorldClient != null)
+                    if (_connectType == ConnectionType.Realm && GetSession().WorldClient != null)
                         GetSession().WorldClient.SendPing(ping.Serial, ping.Latency);
                     HandlePing(ping);
                     break;
@@ -277,14 +281,18 @@ namespace HermesProxy.World.Server
                 case Opcode.CMSG_LOG_DISCONNECT:
                     uint reason = packet.ReadUInt32();
                     Log.Print(LogType.Server, $"Client disconnected with reason {reason}.");
-                    if (_connectType == ConnectionType.Realm &&
-                        GetSession().WorldClient != null)
+
+                    if (_connectType == ConnectionType.Realm && GetSession().WorldClient != null)
+                    {
                         GetSession().WorldClient.Disconnect();
+                    }
+
                     if (GetSession().ModernSniff != null)
                     {
                         GetSession().ModernSniff.CloseFile();
                         GetSession().ModernSniff = null;
                     }
+
                     break;
                 case Opcode.CMSG_ENABLE_NAGLE:
                     SetNoDelay(false);
@@ -334,7 +342,7 @@ namespace HermesProxy.World.Server
         {
             if (!IsOpen())
             {
-                Log.Print(LogType.Error, $"Can't send {packet.GetUniversalOpcode()}, socket is closed!");
+                Log.PrintNet(LogType.Error, LogNetDir.P2C, $"Can't send {packet.GetUniversalOpcode()}, socket is closed!");
                 if (GetSession() != null)
                 {
                     if (GetSession().RealmSocket == this)
@@ -355,7 +363,7 @@ namespace HermesProxy.World.Server
             Opcode universalOpcode = packet.GetUniversalOpcode();
             ushort opcode = (ushort)packet.GetOpcode();
 
-            Log.Print(LogType.Debug, $"Sending opcode {universalOpcode} ({(uint)opcode}).");
+            Log.PrintNet(LogType.Debug, LogNetDir.P2C, $"Sending opcode {universalOpcode} ({(uint)opcode}).");
 
             ByteBuffer buffer = new();
 
@@ -414,7 +422,7 @@ namespace HermesProxy.World.Server
             int z_res = ZLib.deflate(_compressionStream, 2);
             if (z_res != 0)
             {
-                Log.Print(LogType.Error, $"Can't compress packet data (zlib: deflate) Error code: {z_res} msg: {_compressionStream.msg}");
+                Log.PrintNet(LogType.Error, LogNetDir.P2C, $"Can't compress packet data (zlib: deflate) Error code: {z_res} msg: {_compressionStream.msg}");
                 return 0;
             }
 
@@ -446,13 +454,14 @@ namespace HermesProxy.World.Server
 
         void HandleAuthSession(AuthSession authSession)
         {
-            _globalSession = Global.SessionsByName[authSession.RealmJoinTicket];
+            _globalSession = BnetSessionTicketStorage.SessionsByName[authSession.RealmJoinTicket];
+            _bnetRpc = new BnetServices.ServiceManager("WorldSocket", this, _globalSession);
             HandleAuthSessionCallback(authSession);
         }
 
         void HandleAuthSessionCallback(AuthSession authSession)
         {
-            RealmBuildInfo buildInfo = Global.RealmMgr.GetBuildInfo(GetSession().Build);
+            RealmBuildInfo buildInfo = GetSession().RealmManager.GetBuildInfo(GetSession().Build);
             if (buildInfo == null)
             {
                 SendAuthResponseError(BattlenetRpcErrorCode.BadVersion);
@@ -513,31 +522,13 @@ namespace HermesProxy.World.Server
             // only first 16 bytes of the hmac are used
             Buffer.BlockCopy(encryptKeyGen.Digest, 0, _encryptKey, 0, 16);
 
-            // As we don't know if attempted login process by ip works, we update last_attempt_ip right away
-            //PreparedStatement stmt = DB.Login.GetPreparedStatement(LoginStatements.UPD_LAST_ATTEMPT_IP);
-            //stmt.AddValue(0, address.Address.ToString());
-            //stmt.AddValue(1, authSession.RealmJoinTicket);
-            //DB.Login.Execute(stmt);
-
-            // This also allows to check for possible "hack" attempts on account
-            //stmt = DB.Login.GetPreparedStatement(LoginStatements.UPD_ACCOUNT_INFO_CONTINUED_SESSION);
-            //stmt.AddValue(0, _sessionKey);
-            //stmt.AddValue(1, account.game.Id);
-            //DB.Login.Execute(stmt);
-
             GetSession().SessionKey = _sessionKey;
 
             Log.Print(LogType.Server, $"WorldSocket:HandleAuthSession: Client '{authSession.RealmJoinTicket}' authenticated successfully from {address}.");
 
-            // Update the last_ip in the database
-            //stmt = DB.Login.GetPreparedStatement(LoginStatements.UPD_LAST_IP);
-            //stmt.AddValue(0, address.Address.ToString());
-            //stmt.AddValue(1, authSession.RealmJoinTicket);
-            //DB.Login.Execute(stmt);
-
             _realmId = new RealmId((byte)authSession.RegionID, (byte)authSession.BattlegroupID, authSession.RealmID);
-            GetSession().WorldClient = new HermesProxy.World.Client.WorldClient();
-            if (!GetSession().WorldClient.ConnectToWorldServer(RealmManager.Instance.GetRealm(_realmId), GetSession()))
+            GetSession().WorldClient = new Client.WorldClient();
+            if (!GetSession().WorldClient.ConnectToWorldServer(GetSession().RealmManager.GetRealm(_realmId), GetSession()))
             {
                 SendAuthResponseError(BattlenetRpcErrorCode.BadServer);
                 Log.Print(LogType.Error, "The WorldClient failed to connect to the selected world server!");
@@ -589,7 +580,7 @@ namespace HermesProxy.World.Server
             ConnectToKey key = new();
             _key = key.Raw = authSession.Key;
 
-            _globalSession = Global.SessionsByKey[_key];
+            _globalSession = BnetSessionTicketStorage.SessionsByKey[_key];
 
             uint accountId = key.AccountId;
             string login = GetSession().AccountInfo.Login;
@@ -629,7 +620,7 @@ namespace HermesProxy.World.Server
             _instanceConnectKey.connectionType = ConnectionType.Instance;
             _instanceConnectKey.Key = RandomHelper.URand(0, 0x7FFFFFFF);
 
-            Global.AddNewSessionByKey(_instanceConnectKey.Raw, GetSession());
+            BnetSessionTicketStorage.AddNewSessionByKey(_instanceConnectKey.Raw, GetSession());
 
             ConnectTo connectTo = new();
             connectTo.Key = _instanceConnectKey.Raw;
@@ -707,7 +698,7 @@ namespace HermesProxy.World.Server
                 SendClientCacheVersion(0);
                 SendAvailableHotfixes();
                 SendBnetConnectionState(1);
-                GetSession().AccountDataMgr = new AccountDataManager(GetSession().Username, RealmManager.Instance.GetRealm(_realmId).Name);
+                GetSession().AccountDataMgr = new AccountDataManager(GetSession().Username, GetSession().RealmManager.GetRealm(_realmId).Name);
                 GetSession().RealmSocket = this;
             }
             else
@@ -740,7 +731,7 @@ namespace HermesProxy.World.Server
                 response.SuccessInfo.VirtualRealmAddress = _realmId.GetAddress();
                 response.SuccessInfo.Time = (uint)Time.UnixTime;
 
-                var realm = RealmManager.Instance.GetRealm(_realmId);
+                var realm = GetSession().RealmManager.GetRealm(_realmId);
 
                 // Send current home realm. Also there is no need to send it later in realm queries.
                 response.SuccessInfo.VirtualRealms.Add(new VirtualRealmInfo(realm.Id.GetAddress(), true, false, realm.Name, realm.NormalizedName));
@@ -1108,6 +1099,30 @@ namespace HermesProxy.World.Server
 
             Action<WorldSocket, ClientPacket> methodCaller;
             Type packetType;
+        }
+
+        public void SendRpcMessage(uint serviceId, OriginalHash service, uint methodId, uint token, BattlenetRpcErrorCode status, IMessage? message)
+        {
+            var methodInfo = new MethodCall();
+            methodInfo.SetServiceHash((uint)service);
+            methodInfo.SetMethodId(methodId);
+            methodInfo.Token = token;
+            methodInfo.ObjectId = serviceId;
+
+            byte[] bytes = message == null ? Array.Empty<byte>() : message.ToByteArray();
+            BattlenetResponse response = new()
+            {
+                Method = methodInfo,
+                Status = status,
+                Data   = new ByteBuffer(bytes),
+            };
+
+            SendPacket(response);
+        }
+
+        public IPEndPoint GetRemoteIpEndPoint()
+        {
+            return GetRemoteIpAddress();
         }
     }
 

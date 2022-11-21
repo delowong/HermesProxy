@@ -5,9 +5,65 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using Framework;
+using Framework.Logging;
 
 namespace HermesProxy.World.Server
 {
+    public class AccountMetaDataManager
+    {
+        private const string LAST_CHARACTER_FILE = "last_character.txt";
+
+        private readonly string _accountName;
+
+        private string GetAccountMetaDataDirectory()
+        {
+            string path = Path.GetFullPath(Path.Combine("AccountData", _accountName));
+
+            if (!Directory.Exists(path))
+                Directory.CreateDirectory(path);
+
+            return path;
+        }
+        
+        public AccountMetaDataManager(string accountName)
+        {
+            _accountName = accountName;
+        }
+
+        public (string realmName, string charName, ulong charLowerGuid, long lastLoginUnixSec)? GetLastSelectedCharacter()
+        {
+            if (!Settings.RememberLastCharacter)
+                return null;
+
+            var path = Path.Combine(GetAccountMetaDataDirectory(), LAST_CHARACTER_FILE);
+            if (!File.Exists(path))
+                return null;
+
+            var rawContent = File.ReadAllText(path, Encoding.UTF8);
+            var content = rawContent.Split(',');
+            if (content.Length != 4)
+            {
+                Log.Print(LogType.Error, $"Invalid split size in 'GetLastSelectedCharacter' for account '{_accountName}'");
+                return null;
+            }
+            
+            return (content[0], content[1], ulong.Parse(content[3]), long.Parse(content[2]));
+        }
+
+        public void SaveLastSelectedCharacter(string realmName, string charName, ulong charLowerGuid, long lastLoginUnixSec)
+        {
+            if (!Settings.RememberLastCharacter)
+                return;
+
+            var dir = GetAccountMetaDataDirectory();
+            var path = Path.Combine(dir, LAST_CHARACTER_FILE);
+
+            File.WriteAllText(path, $"{realmName},{charName},{charLowerGuid},{lastLoginUnixSec}", Encoding.UTF8);
+            Log.Print(LogType.Debug, $"Saved last selected char in '{path}'");
+        }
+    }
+    
     public class AccountData
     {
         public WowGuid128 Guid;
@@ -24,7 +80,7 @@ namespace HermesProxy.World.Server
         
         public AccountDataManager(string accountName, string realmName)
         {
-            _accountName = accountName.Trim();
+            _accountName = accountName;
             _realmName = realmName.Trim();
         }
 
@@ -44,10 +100,7 @@ namespace HermesProxy.World.Server
 
         public string GetAccountDataDirectory()
         {
-            string path = Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location);
-            path = Path.Combine(path, "AccountData");
-            path = Path.Combine(path, _accountName);
-            path = Path.Combine(path, _realmName);
+            string path = Path.GetFullPath(Path.Combine("AccountData", _accountName, _realmName));
 
             if (!Directory.Exists(path))
                 Directory.CreateDirectory(path);
@@ -138,8 +191,7 @@ namespace HermesProxy.World.Server
 
         public byte[] LoadCUFProfiles()
         {
-            string fileName = GetAccountDataDirectory();
-            fileName = Path.Combine(fileName, "cuf.bin");
+            string fileName = Path.Combine(GetAccountDataDirectory(), "cuf.bin");
 
             if (File.Exists(fileName))
             {
@@ -157,8 +209,7 @@ namespace HermesProxy.World.Server
 
         public void SaveCUFProfiles(byte[] data)
         {
-            string fileName = GetAccountDataDirectory();
-            fileName = Path.Combine(fileName, "cuf.bin");
+            string fileName = Path.Combine(GetAccountDataDirectory(), "cuf.bin");
 
             using (BinaryWriter writer = new BinaryWriter(File.Open(fileName, FileMode.Create)))
             {

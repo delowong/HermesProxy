@@ -5,6 +5,8 @@ using HermesProxy.World.Enums;
 using HermesProxy.World.Objects;
 using HermesProxy.World.Server;
 using System.Collections.Generic;
+using System.Linq;
+using Framework.Realm;
 using ArenaTeamInspectData = HermesProxy.World.Server.Packets.ArenaTeamInspectData;
 
 namespace HermesProxy
@@ -17,6 +19,15 @@ namespace HermesProxy
         public Gender SexId;
         public byte Level;
     }
+
+    public class OwnCharacterInfo : PlayerCache
+    {
+        public WowGuid128 AccountId;
+        public WowGuid128 CharacterGuid;
+        public Realm Realm;
+        public ulong LastLoginUnixSec;
+    }
+
     public class GameSessionData
     {
         public bool HasWsgHordeFlagCarrier;
@@ -56,6 +67,7 @@ namespace HermesProxy
         public List<ClientCastRequest> PendingClientPetCasts = new List<ClientCastRequest>();
         public WowGuid64 LastLootTargetGuid;
         public List<int> ActionButtons = new();
+        public Dictionary<WowGuid128, Dictionary<byte, int>> UnitAuraDurationUpdateTime = new();
         public Dictionary<WowGuid128, Dictionary<byte, int>> UnitAuraDurationLeft = new();
         public Dictionary<WowGuid128, Dictionary<byte, int>> UnitAuraDurationFull = new();
         public Dictionary<WowGuid128, Dictionary<byte, WowGuid128>> UnitAuraCaster = new();
@@ -67,7 +79,7 @@ namespace HermesProxy
         public Dictionary<WowGuid128, ObjectType> OriginalObjectTypes = new();
         public Dictionary<WowGuid128, uint[]> ItemGems = new();
         public Dictionary<uint, Class> CreatureClasses = new();
-        public List<WowGuid128> OwnCharacters = new();
+        public List<OwnCharacterInfo> OwnCharacters = new();
         public Dictionary<string, int> ChannelIds = new();
         public Dictionary<uint, uint> ItemBuyCount = new();
         public Dictionary<uint, uint> RealSpellToLearnSpell = new();
@@ -139,6 +151,19 @@ namespace HermesProxy
 
             uint itemId = updates[OBJECT_FIELD_ENTRY].UInt32Value;
             return GameData.GetItemEffectSlot(itemId, spellId);
+        }
+        public uint GetItemId(WowGuid128 guid)
+        {
+            int OBJECT_FIELD_ENTRY = LegacyVersion.GetUpdateField(ObjectField.OBJECT_FIELD_ENTRY);
+            if (OBJECT_FIELD_ENTRY < 0)
+                return 0;
+
+            var updates = GetCachedObjectFieldsLegacy(guid);
+            if (updates == null)
+                return 0;
+
+            uint itemId = updates[OBJECT_FIELD_ENTRY].UInt32Value;
+            return itemId;
         }
         public void SetFlatSpellMod(byte spellMod, byte spellMask, int amount)
         {
@@ -290,7 +315,7 @@ namespace HermesProxy
                 return BattleFieldQueueTypes[queueSlot];
             return 0;
         }
-        public void StoreAuraDurationLeft(WowGuid128 guid, byte slot, int duration)
+        public void StoreAuraDurationLeft(WowGuid128 guid, byte slot, int duration, int currentTime)
         {
             if (UnitAuraDurationLeft.ContainsKey(guid))
             {
@@ -304,6 +329,20 @@ namespace HermesProxy
                 Dictionary<byte, int> dict = new Dictionary<byte, int>();
                 dict.Add(slot, duration);
                 UnitAuraDurationLeft.Add(guid, dict);
+            }
+
+            if (UnitAuraDurationUpdateTime.ContainsKey(guid))
+            {
+                if (UnitAuraDurationUpdateTime[guid].ContainsKey(slot))
+                    UnitAuraDurationUpdateTime[guid][slot] = currentTime;
+                else
+                    UnitAuraDurationUpdateTime[guid].Add(slot, currentTime);
+            }
+            else
+            {
+                Dictionary<byte, int> dict = new Dictionary<byte, int>();
+                dict.Add(slot, currentTime);
+                UnitAuraDurationUpdateTime.Add(guid, dict);
             }
         }
         public void StoreAuraDurationFull(WowGuid128 guid, byte slot, int duration)
@@ -324,6 +363,10 @@ namespace HermesProxy
         }
         public void ClearAuraDuration(WowGuid128 guid, byte slot)
         {
+            if (UnitAuraDurationUpdateTime.ContainsKey(guid) &&
+                UnitAuraDurationUpdateTime[guid].ContainsKey(slot))
+                UnitAuraDurationUpdateTime[guid].Remove(slot);
+
             if (UnitAuraDurationLeft.ContainsKey(guid) &&
                 UnitAuraDurationLeft[guid].ContainsKey(slot))
                 UnitAuraDurationLeft[guid].Remove(slot);
@@ -345,6 +388,11 @@ namespace HermesProxy
                 full = UnitAuraDurationFull[guid][slot];
             else
                 full = left;
+
+            if (left > 0 &&
+                UnitAuraDurationUpdateTime.ContainsKey(guid) &&
+                UnitAuraDurationUpdateTime[guid].ContainsKey(slot))
+                left = left - (System.Environment.TickCount - UnitAuraDurationUpdateTime[guid][slot]);
         }
         public void StoreAuraCaster(WowGuid128 target, byte slot, WowGuid128 caster)
         {
@@ -603,20 +651,26 @@ namespace HermesProxy
         public BNetServer.Networking.AccountInfo AccountInfo;
         public BNetServer.Networking.GameAccountInfo GameAccountInfo;
         public string Username;
-        public string Password;
         public string LoginTicket;
         public byte[] SessionKey;
         public string Locale;
         public string OS;
         public uint Build;
-        public Framework.Realm.RealmId RealmId;
         public GameSessionData GameState = new();
+        
+        public RealmId RealmId;
+        public RealmManager RealmManager = new();
+        public Realm? Realm => RealmManager.GetRealm(RealmId);
+
+        public AccountMetaDataManager AccountMetaDataMgr;
         public AccountDataManager AccountDataMgr;
+
         public WorldSocket RealmSocket;
         public WorldSocket InstanceSocket;
         public AuthClient AuthClient;
         public WorldClient WorldClient;
         public SniffFile ModernSniff;
+
         public Dictionary<string, WowGuid128> GuildsByName = new();
         public Dictionary<uint, List<string>> GuildRanks = new();
 
@@ -665,15 +719,15 @@ namespace HermesProxy
 
         public WowGuid128 GetGameAccountGuidForPlayer(WowGuid128 playerGuid)
         {
-            if (GameState.OwnCharacters.Contains(playerGuid))
-                return WowGuid128.Create(HighGuidType703.WowAccount, GameAccountInfo.Id);
+            if (GameState.OwnCharacters.Any(own => own.CharacterGuid == playerGuid))
+                return GameAccountInfo.WoWAccountGuid;
             else
                 return WowGuid128.Create(HighGuidType703.WowAccount, playerGuid.GetCounter());
         }
 
         public WowGuid128 GetBnetAccountGuidForPlayer(WowGuid128 playerGuid)
         {
-            if (GameState.OwnCharacters.Contains(playerGuid))
+            if (GameState.OwnCharacters.Any(own => own.CharacterGuid == playerGuid))
                 return WowGuid128.Create(HighGuidType703.BNetAccount, AccountInfo.Id);
             else
                 return WowGuid128.Create(HighGuidType703.BNetAccount, playerGuid.GetCounter());

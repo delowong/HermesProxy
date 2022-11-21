@@ -1,10 +1,12 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text;
 using System.Net;
 using System.Net.Sockets;
 using HermesProxy.Enums;
 using System.Numerics;
+using System.Threading.Tasks;
 using Framework.Constants;
 using Framework.Cryptography;
 using Framework;
@@ -15,31 +17,40 @@ namespace HermesProxy.Auth
 {
     public class AuthClient
     {
+        GlobalSessionData _globalSession;
         Socket _clientSocket;
-        bool? _isSuccessful = null;
+        TaskCompletionSource<AuthResult> _response;
+        TaskCompletionSource _hasRealmlist;
         byte[] _passwordHash;
         BigInteger _key;
-        byte[] _m2;
-        bool _hasRealmList;
+        byte[] _m2; 
         string _username;
-        string _password;
         string _locale;
 
-        public bool ConnectToAuthServer(string username, string password, string locale)
+        public AuthClient(GlobalSessionData globalSession)
+        {
+            _globalSession = globalSession;
+        }
+
+        public GlobalSessionData GetSession()
+        {
+            return _globalSession;
+        }
+
+        public AuthResult ConnectToAuthServer(string username, string password, string locale)
         {
             _username = username;
-            _password = password;
             _locale = locale;
 
-            _isSuccessful = null;
-            _hasRealmList = false;
+            _response = new ();
+            _hasRealmlist = new();
 
-            string authstring = $"{_username.ToUpper()}:{_password}";
+            string authstring = $"{_username}:{password}";
             _passwordHash = HashAlgorithm.SHA1.Hash(Encoding.ASCII.GetBytes(authstring.ToUpper()));
 
             try
             {
-                Log.Print(LogType.Network, "Connecting to auth server...");
+                Log.PrintNet(LogType.Network, LogNetDir.P2S, "Connecting to auth server...");
                 _clientSocket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
                 // Connect to the specified host.
                 var endPoint = new IPEndPoint(IPAddress.Parse(Settings.ServerAddress), Settings.ServerPort);
@@ -47,16 +58,44 @@ namespace HermesProxy.Auth
             }
             catch (Exception ex)
             {
-                Log.Print(LogType.Error, $"Socket Error: {ex.Message}");
-                _isSuccessful = false;
+                Log.PrintNet(LogType.Error, LogNetDir.P2S, $"Socket Error: {ex.Message}");
+                _response.SetResult(AuthResult.FAIL_INTERNAL_ERROR);
             }
 
-            while (_isSuccessful == null)
-            { }
+            _response.Task.Wait();
 
-            return (bool)_isSuccessful;
+            return _response.Task.Result;
         }
 
+        public AuthResult Reconnect()
+        {
+            _response = new ();
+            _hasRealmlist = new();
+
+            try
+            {
+                Log.PrintNet(LogType.Network, LogNetDir.P2S, "Connecting to auth server...");
+                _clientSocket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+                // Connect to the specified host.
+                var endPoint = new IPEndPoint(IPAddress.Parse(Settings.ServerAddress), Settings.ServerPort);
+                _clientSocket.BeginConnect(endPoint, ConnectCallback, null);
+            }
+            catch (Exception ex)
+            {
+                Log.PrintNet(LogType.Error, LogNetDir.P2S, $"Socket Error: {ex.Message}");
+                _response.SetResult(AuthResult.FAIL_INTERNAL_ERROR);
+            }
+
+            _response.Task.Wait();
+
+            return _response.Task.Result;
+        }
+
+        private void SetAuthResponse(AuthResult response)
+        {
+            _response.TrySetResult(response);
+        }
+        
         public void Disconnect()
         {
             if (!IsConnected())
@@ -88,8 +127,8 @@ namespace HermesProxy.Auth
             }
             catch (Exception ex)
             {
-                Log.Print(LogType.Error, $"Connect Error: {ex.Message}");
-                _isSuccessful = false;
+                Log.PrintNet(LogType.Error, LogNetDir.P2S, $"Connect Error: {ex.Message}");
+                SetAuthResponse(AuthResult.FAIL_INTERNAL_ERROR);
             }
         }
 
@@ -101,10 +140,9 @@ namespace HermesProxy.Auth
 
                 if (received == 0)
                 {
-                    if (_isSuccessful == null)
-                        _isSuccessful = false;
+                    SetAuthResponse(AuthResult.FAIL_INTERNAL_ERROR);
 
-                    Log.Print(LogType.Error, "Socket Closed By Server");
+                    Log.PrintNet(LogType.Error, LogNetDir.S2P, "Socket Closed By Server");
                     return;
                 }
 
@@ -122,7 +160,7 @@ namespace HermesProxy.Auth
             catch (Exception ex)
             {
                 Log.Print(LogType.Error, $"Packet Read Error: {ex.Message}");
-                _isSuccessful = false;
+                SetAuthResponse(AuthResult.FAIL_INTERNAL_ERROR);
             }
         }
 
@@ -134,8 +172,8 @@ namespace HermesProxy.Auth
             }
             catch (Exception ex)
             {
-                Log.Print(LogType.Error, $"Packet Send Error: {ex.Message}");
-                _isSuccessful = false;
+                Log.PrintNet(LogType.Error, LogNetDir.P2S, $"Packet Send Error: {ex.Message}");
+                SetAuthResponse(AuthResult.FAIL_INTERNAL_ERROR);
             }
         }
 
@@ -147,8 +185,8 @@ namespace HermesProxy.Auth
             }
             catch (Exception ex)
             {
-                Log.Print(LogType.Error, $"Packet Write Error: {ex.Message}");
-                _isSuccessful = false;
+                Log.PrintNet(LogType.Error, LogNetDir.P2S, $"Packet Write Error: {ex.Message}");
+                SetAuthResponse(AuthResult.FAIL_INTERNAL_ERROR);
             }
         }
 
@@ -156,7 +194,7 @@ namespace HermesProxy.Auth
         {
             ByteBuffer packet = new ByteBuffer(buffer);
             AuthCommand opcode = (AuthCommand)packet.ReadUInt8();
-            Log.Print(LogType.Debug, $"Received opcode {opcode} size {size}.");
+            Log.PrintNet(LogType.Debug, LogNetDir.S2P, $"Received opcode {opcode} size {size}.");
 
             switch (opcode)
             {
@@ -170,8 +208,8 @@ namespace HermesProxy.Auth
                     HandleRealmList(packet);
                     break;
                 default:
-                    Log.Print(LogType.Error, $"No handler for opcode {opcode}!");
-                    _isSuccessful = false;
+                    Log.PrintNet(LogType.Error, LogNetDir.S2P, $"No handler for opcode {opcode}!");
+                    SetAuthResponse(AuthResult.FAIL_INTERNAL_ERROR);
                     break;
             }
         }
@@ -207,7 +245,7 @@ namespace HermesProxy.Auth
             if (error != AuthResult.SUCCESS)
             {
                 Log.Print(LogType.Error, $"Login failed. Reason: {error}");
-                _isSuccessful = false;
+                SetAuthResponse(error);
                 return;
             }
 
@@ -375,7 +413,7 @@ namespace HermesProxy.Auth
             if (error != AuthResult.SUCCESS)
             {
                 Log.Print(LogType.Error, $"Login failed. Reason: {error}");
-                _isSuccessful = false;
+                SetAuthResponse(error);
                 return;
             }
 
@@ -408,24 +446,16 @@ namespace HermesProxy.Auth
             if (!equal)
             {
                 Log.Print(LogType.Error, "Authentication failed!");
-                _isSuccessful = false;
+                SetAuthResponse(AuthResult.FAIL_INTERNAL_ERROR);
             }
             else
             {
                 Log.Print(LogType.Network, "Authentication succeeded!");
-                _isSuccessful = true;
+                SetAuthResponse(AuthResult.SUCCESS);
             }
         }
 
-        public void RequestRealmListAndWait()
-        {
-            SendRealmListRequest();
-            while (!_hasRealmList && IsConnected())
-            {
-            }
-        }
-
-        private void SendRealmListRequest()
+        public void RequestRealmListUpdate()
         {
             ByteBuffer buffer = new ByteBuffer();
             buffer.WriteUInt8((byte)AuthCommand.REALM_LIST);
@@ -471,7 +501,7 @@ namespace HermesProxy.Auth
                 realmInfo.Name = packet.ReadCString();
                 string addressAndPort = packet.ReadCString();
                 string[] strArr = addressAndPort.Split(':');
-                realmInfo.Address = Dns.GetHostAddresses(strArr[0]).GetValue(0).ToString();
+                realmInfo.Address = Dns.GetHostAddresses(strArr[0]).First().ToString();
                 realmInfo.Port = UInt16.Parse(strArr[1]);
                 realmInfo.Population = packet.ReadFloat();
                 realmInfo.CharacterCount = packet.ReadUInt8();
@@ -488,8 +518,13 @@ namespace HermesProxy.Auth
                 realmList.Add(realmInfo);
             }
 
-            RealmManager.Instance.UpdateRealms(realmList);
-            _hasRealmList = true;
+            GetSession().RealmManager.UpdateRealms(realmList);
+            _hasRealmlist.SetResult();
+        }
+
+        public void WaitForRealmlist()
+        {
+            _hasRealmlist.Task.Wait();
         }
     }
 }

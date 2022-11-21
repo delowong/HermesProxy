@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using System.Text;
 using System.Threading;
 using ThreadingState = System.Threading.ThreadState;
 
@@ -16,6 +17,14 @@ namespace Framework.Logging
         Error,
         Warn,
         Storage
+    }
+
+    public enum LogNetDir // Network direction
+    {
+        C2P, // C>P S
+        P2S, // C P>S
+        S2P, // C P<S
+        P2C, // C<P S
     }
 
     public static class Log
@@ -48,7 +57,7 @@ namespace Framework.Logging
                         if (msg.Type == LogType.Debug && !Framework.Settings.DebugOutput)
                             continue;
 
-                        Console.Write($"{DateTime.Now:H:mm:ss} |");
+                        Console.Write($"{DateTime.Now:HH:mm:ss} |");
 
                         Console.ForegroundColor = LogToColorType[msg.Type].Color;
                         Console.Write($"{LogToColorType[msg.Type].Type}");
@@ -68,6 +77,29 @@ namespace Framework.Logging
             logQueue.Add((type, $"{SetCaller(method, path)} | {text}"));
         }
 
+        public static void PrintNet(LogType type, LogNetDir netDirection, object text, [CallerMemberName] string method = "", [CallerFilePath] string path = "")
+        {
+            string directionText = netDirection switch
+            {
+                LogNetDir.C2P => "C>P S",
+                LogNetDir.P2S => "C P>S",
+                LogNetDir.S2P => "C P<S",
+                LogNetDir.P2C => "C<P S",
+            };
+            logQueue.Add((type, $"{SetCaller(method, path)} | {directionText} | {text}"));
+        }
+
+        public static void PrintByteArray(LogType type, string text, byte[] bytes)
+        {
+            StringBuilder hex = new StringBuilder();
+            foreach (byte b in bytes)
+            {
+                hex.AppendFormat("0x{0:x2}, ", b);
+            }
+
+            Print(type, $"{text} {hex}");
+        }
+
         public static void outException(Exception err, [CallerMemberName] string method = "", [CallerFilePath] string path = "")
         {
             Print(LogType.Error, err.ToString(), method, path);
@@ -83,7 +115,7 @@ namespace Framework.Logging
                 location = temp[temp.Length - 1].Replace(".cs", "");
             }
 
-            return location;
+            return location.PadRight(15, ' ');
         }
 
         private static string NameOfCallingClass()
