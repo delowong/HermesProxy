@@ -1,4 +1,5 @@
 ﻿using Framework;
+using Framework.Logging;
 using HermesProxy.Enums;
 using HermesProxy.World.Enums;
 using HermesProxy.World.Objects;
