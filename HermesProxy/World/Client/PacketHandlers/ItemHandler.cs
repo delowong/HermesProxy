@@ -31,11 +31,16 @@ namespace HermesProxy.World.Client
         [PacketHandler(Opcode.SMSG_ITEM_PUSH_RESULT)]
         void HandleItemPushResult(WorldPacket packet)
         {
+            Log.Print(LogType.Debug, $"handle item push result: {packet}");
             ItemPushResult item = new ItemPushResult();
             item.PlayerGUID = packet.ReadGuid().To128(GetSession().GameState);
+            Log.Print(LogType.Debug, $"player guid: {item.PlayerGUID}");
             bool fromNPC = packet.ReadUInt32() == 1;
+            Log.Print(LogType.Debug, $"from npc: {fromNPC}");
             item.Created = packet.ReadUInt32() == 1;
+            Log.Print(LogType.Debug, $"created: {item.Created}");
             bool showInChat = packet.ReadUInt32() == 1;
+            Log.Print(LogType.Debug, $"show in chat: {showInChat}");
             
             if (fromNPC && !item.Created)
             {
