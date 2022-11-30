@@ -293,7 +293,7 @@ namespace HermesProxy.World.Client
                 packet.ReadUInt8(); // Cast Count
 
             uint spellId = packet.ReadUInt32();
-            byte reason = 35;
+            byte reason = 61;
             if (LegacyVersion.AddedInVersion(ClientVersionBuild.V3_0_2_9056))
                 reason = (byte)LegacyVersion.ConvertSpellCastResult(packet.ReadUInt8());
 
@@ -332,7 +332,8 @@ namespace HermesProxy.World.Client
             spell2.CastID = castId;
             spell2.SpellID = spellId;
             spell2.SpellXSpellVisualID = spellVisual;
-            spell2.Reason = reason;
+            if (LegacyVersion.AddedInVersion(ClientVersionBuild.V3_0_2_9056))
+                spell2.Reason = reason;
             SendPacketToClient(spell2);
         }
 
