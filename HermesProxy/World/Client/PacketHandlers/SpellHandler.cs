@@ -333,7 +333,7 @@ namespace HermesProxy.World.Client
             spell2.SpellID = spellId;
             spell2.SpellXSpellVisualID = spellVisual;
             if (LegacyVersion.AddedInVersion(ClientVersionBuild.V3_0_2_9056))
-                spell2.Reason = reason;
+                spell2.Reason = 35;
             SendPacketToClient(spell2);
         }
 
