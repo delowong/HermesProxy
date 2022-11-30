@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Text;
 using System.Net;
@@ -15,8 +16,16 @@ using Framework.Logging;
 
 namespace HermesProxy.Auth
 {
-    public class AuthClient
+    public partial class AuthClient
     {
+        // For ez debugging: Call this function wherever you want
+        private static readonly Action<ByteBuffer> _debugTraceBreakpointHandler = (b) =>
+        {
+#if DEBUG
+            // Debugger.Log(0, "TraceMe", $"{b}");
+#endif
+        };
+
         GlobalSessionData _globalSession;
         Socket _clientSocket;
         TaskCompletionSource<AuthResult> _response;
@@ -50,7 +59,7 @@ namespace HermesProxy.Auth
 
             try
             {
-                Log.PrintNet(LogType.Network, LogNetDir.P2S, "Connecting to auth server...");
+                Log.PrintNet(LogType.Network, LogNetDir.P2S, $"Connecting to auth server... (realmlist addr: {Settings.ServerAddress}:{Settings.ServerPort})");
                 _clientSocket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
                 // Connect to the specified host.
                 var endPoint = new IPEndPoint(IPAddress.Parse(Settings.ServerAddress), Settings.ServerPort);
@@ -74,7 +83,7 @@ namespace HermesProxy.Auth
 
             try
             {
-                Log.PrintNet(LogType.Network, LogNetDir.P2S, "Connecting to auth server...");
+                Log.PrintNet(LogType.Network, LogNetDir.P2S, $"Re-Connecting to auth server... (realmlist addr: {Settings.ServerAddress}:{Settings.ServerPort})");
                 _clientSocket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
                 // Connect to the specified host.
                 var endPoint = new IPEndPoint(IPAddress.Parse(Settings.ServerAddress), Settings.ServerPort);
@@ -177,6 +186,7 @@ namespace HermesProxy.Auth
             }
         }
 
+        // C P>R: Sends data to realm server
         private void SendPacket(ByteBuffer packet)
         {
             try
@@ -218,13 +228,13 @@ namespace HermesProxy.Auth
         {
             ByteBuffer buffer = new ByteBuffer();
             buffer.WriteUInt8((byte)AuthCommand.LOGON_CHALLENGE);
-            buffer.WriteUInt8((byte)(LegacyVersion.GetExpansionVersion() > 1 ? 8 : 3));
+            buffer.WriteUInt8((byte)(LegacyVersion.ExpansionVersion > 1 ? 8 : 3));
             buffer.WriteUInt16((UInt16)(_username.Length + 30));
             buffer.WriteBytes(Encoding.ASCII.GetBytes("WoW"));
             buffer.WriteUInt8(0);
-            buffer.WriteUInt8(LegacyVersion.GetExpansionVersion());
-            buffer.WriteUInt8(LegacyVersion.GetMajorPatchVersion());
-            buffer.WriteUInt8(LegacyVersion.GetMinorPatchVersion());
+            buffer.WriteUInt8(LegacyVersion.ExpansionVersion);
+            buffer.WriteUInt8(LegacyVersion.MajorVersion);
+            buffer.WriteUInt8(LegacyVersion.MinorVersion);
             buffer.WriteUInt16((ushort)Settings.ServerBuild);
             buffer.WriteBytes(Encoding.ASCII.GetBytes(Settings.ReportedPlatform.Reverse()));
             buffer.WriteUInt8(0);
@@ -404,6 +414,9 @@ namespace HermesProxy.Auth
             buffer.WriteBytes(crc);
             buffer.WriteUInt8(0);
             buffer.WriteUInt8(0);
+
+            _debugTraceBreakpointHandler(buffer);
+
             SendPacket(buffer);
         }
 

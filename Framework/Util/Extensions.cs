@@ -47,7 +47,7 @@ namespace System
         {
             StringBuilder builder = new StringBuilder();
 
-            for (int i = array.Length - 1; i >= 0; --i)
+            for (int i = 0; i < array.Length; ++i)
                 builder.Append(array[i].ToString("X2"));
 
             return builder.ToString();
@@ -314,6 +314,19 @@ namespace System
             Array.Copy(utf8StringBytes, data, utf8StringBytes.Length);
             data[data.Length - 1] = 0;
             return data;
+        }
+
+        public static byte[] ParseAsByteArray(this string str)
+        {
+            str = str.Replace(" ", String.Empty);
+
+            var res = new byte[str.Length / 2];
+            for (int i = 0; i < res.Length; ++i)
+            {
+                string temp = String.Concat(str[i * 2], str[i * 2 + 1]);
+                res[i] = Convert.ToByte(temp, 16);
+            }
+            return res;
         }
 
         public static byte[] ToByteArray(this string str)

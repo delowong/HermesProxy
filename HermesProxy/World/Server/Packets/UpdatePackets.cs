@@ -103,10 +103,22 @@ namespace HermesProxy.World.Server.Packets
 
             if (CreateData.MoveInfo != null)
             {
+                if (CreateData.MoveInfo.WalkSpeed == 0)
+                    CreateData.MoveInfo.WalkSpeed = 2.5f;
+                if (CreateData.MoveInfo.RunSpeed == 0)
+                    CreateData.MoveInfo.RunSpeed = 7;
+                if (CreateData.MoveInfo.RunBackSpeed == 0)
+                    CreateData.MoveInfo.RunBackSpeed = 4.5f;
+                if (CreateData.MoveInfo.SwimSpeed == 0)
+                    CreateData.MoveInfo.SwimSpeed = 4.722222f;
+                if (CreateData.MoveInfo.SwimBackSpeed == 0)
+                    CreateData.MoveInfo.SwimBackSpeed = 2.5f;
                 if (CreateData.MoveInfo.FlightSpeed == 0)
                     CreateData.MoveInfo.FlightSpeed = 7;
                 if (CreateData.MoveInfo.FlightBackSpeed == 0)
                     CreateData.MoveInfo.FlightBackSpeed = 4.5f;
+                if (CreateData.MoveInfo.TurnRate == 0)
+                    CreateData.MoveInfo.TurnRate = 3.141594f;
                 if (CreateData.MoveInfo.PitchRate == 0)
                     CreateData.MoveInfo.PitchRate = CreateData.MoveInfo.TurnRate;
                 if (CreateData.MoveInfo.Flags.HasAnyFlag(MovementFlagModern.WalkMode) && (CreateData.MoveSpline != null))
@@ -131,7 +143,7 @@ namespace HermesProxy.World.Server.Packets
                 if (GameObjectData.ParentRotation[3] == null)
                     GameObjectData.ParentRotation[3] = 1;
                 if (GameObjectData.StateAnimID == null)
-                    GameObjectData.StateAnimID = 1556;
+                    GameObjectData.StateAnimID = ModernVersion.GetGameObjectStateAnimId();
                 if (Guid.GetHighType() == HighGuidType.Transport)
                 {
                     uint period = GameData.GetTransportPeriod((uint)ObjectData.EntryID);
@@ -289,6 +301,12 @@ namespace HermesProxy.World.Server.Packets
                     case ClientVersionBuild.V1_14_0_40237:
                     {
                         Objects.Version.V1_14_0_40237.ObjectUpdateBuilder builder = new Objects.Version.V1_14_0_40237.ObjectUpdateBuilder(update, _gameState);
+                        builder.WriteToPacket(data);
+                        break;
+                    }
+                    case ClientVersionBuild.V1_14_1_40688:
+                    {
+                        Objects.Version.V1_14_1_40688.ObjectUpdateBuilder builder = new Objects.Version.V1_14_1_40688.ObjectUpdateBuilder(update, _gameState);
                         builder.WriteToPacket(data);
                         break;
                     }

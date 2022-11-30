@@ -93,6 +93,8 @@ namespace HermesProxy.World.Client
                         {
                             if (!GetSession().GameState.ObjectSpawnCount.ContainsKey(oldGuid))
                                 GetSession().GameState.ObjectSpawnCount.Add(oldGuid, 0);
+                            else if (oldGuid.GetHighType() == HighGuidType.GameObject && GetSession().GameState.DespawnedGameObjects.Contains(oldGuid))
+                                    GetSession().GameState.IncrementObjectSpawnCounter(oldGuid);
                         }
 
                         var guid = oldGuid.To128(GetSession().GameState);
@@ -115,6 +117,15 @@ namespace HermesProxy.World.Client
                         ObjectUpdate updateData = new ObjectUpdate(guid, UpdateTypeModern.CreateObject1, GetSession());
                         AuraUpdate auraUpdate = new AuraUpdate(guid, true);
                         ReadCreateObjectBlock(packet, guid, updateData, auraUpdate, i);
+
+                        if (updateData.Guid == GetSession().GameState.CurrentPlayerGuid)
+                        {
+                            if (GetSession().GameState.CurrentPlayerStorage.CompletedQuests.NeedsToBeForceSent)
+                            {
+                                GetSession().GameState.CurrentPlayerStorage.CompletedQuests.WriteAllCompletedIntoArray(updateData.ActivePlayerData.QuestCompleted);
+                                GetSession().GameState.CurrentPlayerStorage.CompletedQuests.NeedsToBeForceSent = false;
+                            }
+                        }
 
                         if (guid.IsItem() && updateData.ObjectData.EntryID != null &&
                            !GameData.ItemTemplates.ContainsKey((uint)updateData.ObjectData.EntryID))
@@ -771,6 +782,11 @@ namespace HermesProxy.World.Client
                 {
                     moveInfo.FlightSpeed = packet.ReadFloat();
                     moveInfo.FlightBackSpeed = packet.ReadFloat();
+                }
+                else
+                { // Convenience in vanilla to use SwimSpeed as FlySpeed
+                    moveInfo.FlightSpeed = moveInfo.SwimSpeed;
+                    moveInfo.FlightBackSpeed = moveInfo.SwimBackSpeed;
                 }
                 moveInfo.TurnRate = packet.ReadFloat();
                 if (LegacyVersion.AddedInVersion(ClientVersionBuild.V3_0_2_9056))
@@ -1926,20 +1942,29 @@ namespace HermesProxy.World.Client
                 int PLAYER_FLAGS = LegacyVersion.GetUpdateField(PlayerField.PLAYER_FLAGS);
                 if (PLAYER_FLAGS >= 0 && updateMaskArray[PLAYER_FLAGS])
                 {
-                    PlayerFlagsLegacy playerFlags = (PlayerFlagsLegacy)updates[PLAYER_FLAGS].UInt32Value;
-                    updateData.PlayerData.PlayerFlags = (uint)playerFlags.CastFlags<PlayerFlags>();
+                    PlayerFlagsLegacy legacyFlags = (PlayerFlagsLegacy)updates[PLAYER_FLAGS].UInt32Value;
+                    var flags = legacyFlags.CastFlags<PlayerFlags>();
+                    if (updateData.Guid == GetSession().GameState.CurrentPlayerGuid)
+                        GetSession().GameState.CurrentPlayerStorage.Settings.PatchFlags(ref flags); // Some patches like auto guild inv decline
+                    updateData.PlayerData.PlayerFlags = (uint) flags;
 
                     if (updateData.PlayerData.PlayerFlagsEx == null)
                         updateData.PlayerData.PlayerFlagsEx = 0;
-                    if (playerFlags.HasAnyFlag(PlayerFlagsLegacy.HideHelm))
+                    if (legacyFlags.HasAnyFlag(PlayerFlagsLegacy.HideHelm))
                         updateData.PlayerData.PlayerFlagsEx |= (uint)PlayerFlagsEx.HideHelm;
-                    if (playerFlags.HasAnyFlag(PlayerFlagsLegacy.HideCloak))
+                    if (legacyFlags.HasAnyFlag(PlayerFlagsLegacy.HideCloak))
                         updateData.PlayerData.PlayerFlagsEx |= (uint)PlayerFlagsEx.HideCloak;
 
                     if (LegacyVersion.RemovedInVersion(ClientVersionBuild.V3_0_2_9056) &&
                         updateData.UnitData.PvpFlags == null)
                         updateData.UnitData.PvpFlags = ReadPvPFlags(updates);
                 }
+                else if (updateData.Guid == GetSession().GameState.CurrentPlayerGuid && GetSession().GameState.CurrentPlayerStorage.Settings.NeedToForcePatchFlags)
+                { // If we did not patch the PlayerFlags the first time, we need to force include the field
+                    PlayerFlags flags = GetSession().GameState.CurrentPlayerStorage.Settings.CreateNewFlags();
+                    updateData.PlayerData.PlayerFlags = (uint) flags;
+                }
+
                 int PLAYER_GUILDID = LegacyVersion.GetUpdateField(PlayerField.PLAYER_GUILDID);
                 if (PLAYER_GUILDID >= 0 && updateMaskArray[PLAYER_GUILDID])
                 {
@@ -2611,7 +2636,7 @@ namespace HermesProxy.World.Client
                         }
                     }
                 }
-                if (guid == GetSession().GameState.CurrentPlayerGuid && ModernVersion.GetExpansionVersion() > 1)
+                if (guid == GetSession().GameState.CurrentPlayerGuid && ModernVersion.ExpansionVersion > 1)
                 {
                     int PLAYER_FIELD_HONOR_CURRENCY = LegacyVersion.GetUpdateField(PlayerField.PLAYER_FIELD_HONOR_CURRENCY);
                     int PLAYER_FIELD_ARENA_CURRENCY = LegacyVersion.GetUpdateField(PlayerField.PLAYER_FIELD_ARENA_CURRENCY);
@@ -2685,6 +2710,33 @@ namespace HermesProxy.World.Client
                     {
                         if (updateMaskArray[GAMEOBJECT_ROTATION + i])
                             updateData.CreateData.MoveInfo.Rotation[i] = updates[GAMEOBJECT_ROTATION + i].FloatValue;
+                    }
+
+                    // Fix for invalid movement of Deeprun Tram, some carts were going through the wall (in the opposite direction)
+                    // Entry IDs of Trams:
+                    const int tramSouthEastmost = 176080;
+                    const int tramNorthMiddle =   176081;
+                    const int tramSouthMiddle =   176082;
+                    const int tramSouthWestmost = 176083;
+                    const int tramNorthWestmost = 176084;
+                    const int tramNorthEastmost = 176085;
+
+                    if (updateData.ObjectData.EntryID is tramSouthEastmost or tramNorthWestmost or tramNorthEastmost)
+                    {
+                        var rot = updateData.CreateData.MoveInfo.Rotation.AsEulerAngles();
+                        rot.Yaw *= -1; // Rotate the cart content by 180°, so players who stand on the left side of the cart are actually on the left side
+                        updateData.CreateData.MoveInfo.Rotation = rot.AsQuaternion();
+                    }
+                    if (updateData.ObjectData.EntryID is tramNorthMiddle or tramSouthMiddle or tramSouthWestmost or tramNorthEastmost)
+                    {   // Quaternion to rotate the pivot point of the transport movement by 180°
+                        updateData.GameObjectData.ParentRotation = new float?[] { -4.371139E-08f, 0,  1, 0 };
+                    }
+
+                    // Fix for Zangarmarsh Elevator
+                    const int zangarmarshElevator = 183177;
+                    if (updateData.ObjectData.EntryID is zangarmarshElevator)
+                    {   // Super weird angle -88°
+                        updateData.GameObjectData.ParentRotation = new float?[] { 0, 0, -0.69465846f, 0.7193397f };
                     }
                 }
                 int GAMEOBJECT_STATE = LegacyVersion.GetUpdateField(GameObjectField.GAMEOBJECT_STATE);

@@ -51,19 +51,25 @@ namespace HermesProxy.World.Server
             packet.WriteCString(auction.Name);
             packet.WriteUInt8(auction.MinLevel);
             packet.WriteUInt8(auction.MaxLevel);
-            packet.WriteInt32(-1); // auctionSlotID
 
             if (auction.ClassFilters.Count > 0)
             {
-                packet.WriteInt32(auction.ClassFilters[0].ItemClass);
-
                 if (auction.ClassFilters[0].SubClassFilters.Count == 1)
+                {
+                    packet.WriteInt32(ModernToLegacyInventorySlotType(auction.ClassFilters[0].SubClassFilters[0].InvTypeMask));
+                    packet.WriteInt32(auction.ClassFilters[0].ItemClass);
                     packet.WriteInt32(auction.ClassFilters[0].SubClassFilters[0].ItemSubclass);
+                }
                 else
+                {
+                    packet.WriteInt32(-1); // Inventory slotId (head, chest, one-hand etc...)
+                    packet.WriteInt32(auction.ClassFilters[0].ItemClass);
                     packet.WriteInt32(-1); // auctionSubCategory
+                }
             }
             else
             {
+                packet.WriteInt32(-1); // Inventory slotId (head, chest, one-hand etc...)
                 packet.WriteInt32(-1); // auctionMainCategory
                 packet.WriteInt32(-1); // auctionSubCategory
             }
@@ -84,6 +90,25 @@ namespace HermesProxy.World.Server
             }
 
             SendPacketToServer(packet);
+
+            int ModernToLegacyInventorySlotType(uint modernInventoryFlag)
+            {
+                // Modern client can technically search for multiple inventory types at the same time
+                // We just get the first bit and just search for this type
+
+                if (modernInventoryFlag == uint.MaxValue)
+                    return -1;
+                
+                for (int i = 0; i < 32; i++)
+                {
+                    if ((modernInventoryFlag & (1 << i)) > 0)
+                    {
+                        return i;
+                    }
+                }
+
+                return -1;
+            }
         }
 
         [PacketHandler(Opcode.CMSG_AUCTION_SELL_ITEM)]
@@ -93,8 +118,8 @@ namespace HermesProxy.World.Server
 
             // auction durations were increased in tbc
             // server ignores packet if you send wrong duration
-            if (LegacyVersion.GetExpansionVersion() <= 1 &&
-                ModernVersion.GetExpansionVersion() > 1)
+            if (LegacyVersion.ExpansionVersion <= 1 &&
+                ModernVersion.ExpansionVersion > 1)
             {
                 switch (expireTime)
                 {
@@ -115,8 +140,8 @@ namespace HermesProxy.World.Server
                     }
                 }
             }
-            else if (LegacyVersion.GetExpansionVersion() > 1 &&
-                     ModernVersion.GetExpansionVersion() <= 1)
+            else if (LegacyVersion.ExpansionVersion > 1 &&
+                     ModernVersion.ExpansionVersion <= 1)
             {
                 switch (expireTime)
                 {

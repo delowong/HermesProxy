@@ -18,6 +18,7 @@ namespace HermesProxy.World
         public static SortedDictionary<uint, BroadcastText> BroadcastTextStore = new SortedDictionary<uint, BroadcastText>();
         public static Dictionary<uint, ItemDisplayData> ItemDisplayDataStore = new Dictionary<uint, ItemDisplayData>();
         public static Dictionary<uint, Battleground> Battlegrounds = new Dictionary<uint, Battleground>();
+        public static Dictionary<uint, ChatChannel> ChatChannels = new Dictionary<uint, ChatChannel>();
         public static Dictionary<uint, Dictionary<uint, byte>> ItemEffects = new Dictionary<uint, Dictionary<uint, byte>>();
         public static Dictionary<uint, uint> ItemEnchantVisuals = new Dictionary<uint, uint>();
         public static Dictionary<uint, uint> SpellVisuals = new Dictionary<uint, uint>();
@@ -26,6 +27,7 @@ namespace HermesProxy.World
         public static Dictionary<uint, uint> Gems = new Dictionary<uint, uint>();
         public static Dictionary<uint, float> UnitDisplayScales = new Dictionary<uint, float>();
         public static Dictionary<uint, uint> TransportPeriods = new Dictionary<uint, uint>();
+        public static Dictionary<uint, string> AreaNames = new Dictionary<uint, string>();
         public static HashSet<uint> DispellSpells = new HashSet<uint>();
         public static HashSet<uint> StackableAuras = new HashSet<uint>();
         public static HashSet<uint> MountAuras = new HashSet<uint>();
@@ -33,6 +35,7 @@ namespace HermesProxy.World
         public static HashSet<uint> AutoRepeatSpells = new HashSet<uint>();
         public static Dictionary<uint, TaxiPath> TaxiPaths = new Dictionary<uint, TaxiPath>();
         public static int[,] TaxiNodesGraph = new int[250,250];
+        public static Dictionary<uint /*questId*/, uint /*questBit*/> QuestBits = new Dictionary<uint, uint>();
 
         // From Server
         public static Dictionary<uint, ItemTemplate> ItemTemplates = new Dictionary<uint, ItemTemplate>();
@@ -108,6 +111,14 @@ namespace HermesProxy.World
             return null;
         }
 
+        public static uint? GetUniqueQuestBit(uint questId)
+        {
+            if (!QuestBits.TryGetValue(questId, out var result))
+                return null;
+
+            return result;
+        }
+        
         public static void StoreCreatureTemplate(uint entry, CreatureTemplate template)
         {
             if (CreatureTemplates.ContainsKey(entry))
@@ -233,6 +244,14 @@ namespace HermesProxy.World
             return 0;
         }
 
+        public static string GetAreaName(uint id)
+        {
+            string name;
+            if (AreaNames.TryGetValue(id, out name))
+                return name;
+            return "";
+        }
+
         public static uint GetBattlegroundIdFromMapId(uint mapId)
         {
             foreach (var bg in Battlegrounds)
@@ -249,6 +268,27 @@ namespace HermesProxy.World
             if (Battlegrounds.TryGetValue(bgId, out bg))
                 return bg.MapIds[0];
             return 0;
+        }
+
+        public static uint GetChatChannelIdFromName(string name)
+        {
+            foreach (var channel in ChatChannels)
+            {
+                if (name.Contains(channel.Value.Name))
+                    return channel.Key;
+            }
+            return 0;
+        }
+
+        public static List<ChatChannel> GetChatChannelsWithFlags(ChannelFlags flags)
+        {
+            List<ChatChannel> channels = new List<ChatChannel>();
+            foreach (var channel in ChatChannels)
+            {
+                if ((channel.Value.Flags & flags) == flags)
+                    channels.Add(channel.Value);
+            }
+            return channels;
         }
 
         public static bool IsAllianceRace(Race raceId)
@@ -307,6 +347,7 @@ namespace HermesProxy.World
             LoadBroadcastTexts();
             LoadItemTemplates();
             LoadBattlegrounds();
+            LoadChatChannels();
             LoadItemEnchantVisuals();
             LoadSpellVisuals();
             LoadLearnSpells();
@@ -314,6 +355,7 @@ namespace HermesProxy.World
             LoadGems();
             LoadUnitDisplayScales();
             LoadTransports();
+            LoadAreaNames();
             LoadDispellSpells();
             LoadStackableAuras();
             LoadMountAuras();
@@ -321,13 +363,14 @@ namespace HermesProxy.World
             LoadAutoRepeatSpells();
             LoadTaxiPaths();
             LoadTaxiPathNodesGraph();
+            LoadQuestBits();
             LoadHotfixes();
             Log.Print(LogType.Storage, "Finished loading data.");
         }
 
         public static void LoadBroadcastTexts()
         {
-            var path = Path.Combine("CSV", $"BroadcastTexts{LegacyVersion.GetExpansionVersion()}.csv");
+            var path = Path.Combine("CSV", $"BroadcastTexts{LegacyVersion.ExpansionVersion}.csv");
             using (TextFieldParser csvParser = new TextFieldParser(path))
             {
                 csvParser.CommentTokens = new string[] { "#" };
@@ -360,7 +403,7 @@ namespace HermesProxy.World
 
         public static void LoadItemTemplates()
         {
-            var path = Path.Combine("CSV", $"Items{ModernVersion.GetExpansionVersion()}.csv");
+            var path = Path.Combine("CSV", $"Items{ModernVersion.ExpansionVersion}.csv");
             using (TextFieldParser csvParser = new TextFieldParser(path))
             {
                 csvParser.CommentTokens = new string[] { "#" };
@@ -416,9 +459,35 @@ namespace HermesProxy.World
             }
         }
 
+        public static void LoadChatChannels()
+        {
+            var path = Path.Combine("CSV", "ChatChannels.csv");
+            using (TextFieldParser csvParser = new TextFieldParser(path))
+            {
+                csvParser.CommentTokens = new string[] { "#" };
+                csvParser.SetDelimiters(new string[] { "," });
+                csvParser.HasFieldsEnclosedInQuotes = true;
+
+                // Skip the row with the column names
+                csvParser.ReadLine();
+
+                while (!csvParser.EndOfData)
+                {
+                    // Read current line fields, pointer moves to the next line.
+                    string[] fields = csvParser.ReadFields();
+
+                    ChatChannel channel = new ChatChannel();
+                    channel.Id = UInt32.Parse(fields[0]);
+                    channel.Flags = (ChannelFlags)UInt32.Parse(fields[1]);
+                    channel.Name = fields[2];
+                    ChatChannels.Add(channel.Id, channel);
+                }
+            }
+        }
+
         public static void LoadItemEnchantVisuals()
         {
-            var path = Path.Combine("CSV", $"ItemEnchantVisuals{ModernVersion.GetExpansionVersion()}.csv");
+            var path = Path.Combine("CSV", $"ItemEnchantVisuals{ModernVersion.ExpansionVersion}.csv");
             using (TextFieldParser csvParser = new TextFieldParser(path))
             {
                 csvParser.CommentTokens = new string[] { "#" };
@@ -442,7 +511,7 @@ namespace HermesProxy.World
 
         public static void LoadSpellVisuals()
         {
-            var path = Path.Combine("CSV", $"SpellVisuals{ModernVersion.GetExpansionVersion()}.csv");
+            var path = Path.Combine("CSV", $"SpellVisuals{ModernVersion.ExpansionVersion}.csv");
             using (TextFieldParser csvParser = new TextFieldParser(path))
             {
                 csvParser.CommentTokens = new string[] { "#" };
@@ -491,7 +560,7 @@ namespace HermesProxy.World
 
         public static void LoadTotemSpells()
         {
-            if (LegacyVersion.GetExpansionVersion() > 1)
+            if (LegacyVersion.ExpansionVersion > 1)
                 return;
 
             var path = Path.Combine("CSV", $"TotemSpells.csv");
@@ -518,10 +587,10 @@ namespace HermesProxy.World
 
         public static void LoadGems()
         {
-            if (ModernVersion.GetExpansionVersion() <= 1)
+            if (ModernVersion.ExpansionVersion <= 1)
                 return;
 
-            var path = Path.Combine("CSV", $"Gems{ModernVersion.GetExpansionVersion()}.csv");
+            var path = Path.Combine("CSV", $"Gems{ModernVersion.ExpansionVersion}.csv");
             using (TextFieldParser csvParser = new TextFieldParser(path))
             {
                 csvParser.CommentTokens = new string[] { "#" };
@@ -545,7 +614,7 @@ namespace HermesProxy.World
 
         public static void LoadUnitDisplayScales()
         {
-            if (LegacyVersion.GetExpansionVersion() > 1)
+            if (LegacyVersion.ExpansionVersion > 1)
                 return;
 
             var path = Path.Combine("CSV", "UnitDisplayScales.csv");
@@ -572,7 +641,7 @@ namespace HermesProxy.World
 
         public static void LoadTransports()
         {
-            var path = Path.Combine("CSV", $"Transports{LegacyVersion.GetExpansionVersion()}.csv");
+            var path = Path.Combine("CSV", $"Transports{LegacyVersion.ExpansionVersion}.csv");
             using (TextFieldParser csvParser = new TextFieldParser(path))
             {
                 csvParser.CommentTokens = new string[] { "#" };
@@ -594,9 +663,33 @@ namespace HermesProxy.World
             }
         }
 
+        public static void LoadAreaNames()
+        {
+            var path = Path.Combine("CSV", $"AreaNames.csv");
+            using (TextFieldParser csvParser = new TextFieldParser(path))
+            {
+                csvParser.CommentTokens = new string[] { "#" };
+                csvParser.SetDelimiters(new string[] { "," });
+                csvParser.HasFieldsEnclosedInQuotes = true;
+
+                // Skip the row with the column names
+                csvParser.ReadLine();
+
+                while (!csvParser.EndOfData)
+                {
+                    // Read current line fields, pointer moves to the next line.
+                    string[] fields = csvParser.ReadFields();
+
+                    uint id = UInt32.Parse(fields[0]);
+                    string name = fields[1];
+                    AreaNames.Add(id, name);
+                }
+            }
+        }
+
         public static void LoadDispellSpells()
         {
-            if (LegacyVersion.GetExpansionVersion() > 1)
+            if (LegacyVersion.ExpansionVersion > 1)
                 return;
 
             var path = Path.Combine("CSV", "DispellSpells.csv");
@@ -622,10 +715,10 @@ namespace HermesProxy.World
 
         public static void LoadStackableAuras()
         {
-            if (LegacyVersion.GetExpansionVersion() > 2)
+            if (LegacyVersion.ExpansionVersion > 2)
                 return;
 
-            var path = Path.Combine("CSV", $"StackableAuras{LegacyVersion.GetExpansionVersion()}.csv");
+            var path = Path.Combine("CSV", $"StackableAuras{LegacyVersion.ExpansionVersion}.csv");
             using (TextFieldParser csvParser = new TextFieldParser(path))
             {
                 csvParser.CommentTokens = new string[] { "#" };
@@ -648,7 +741,7 @@ namespace HermesProxy.World
 
         public static void LoadMountAuras()
         {
-            if (LegacyVersion.GetExpansionVersion() > 1)
+            if (LegacyVersion.ExpansionVersion > 1)
                 return;
 
             var path = Path.Combine("CSV", $"MountAuras.csv");
@@ -674,7 +767,7 @@ namespace HermesProxy.World
 
         public static void LoadMeleeSpells()
         {
-            var path = Path.Combine("CSV", $"MeleeSpells{ModernVersion.GetExpansionVersion()}.csv");
+            var path = Path.Combine("CSV", $"MeleeSpells{ModernVersion.ExpansionVersion}.csv");
             using (TextFieldParser csvParser = new TextFieldParser(path))
             {
                 csvParser.CommentTokens = new string[] { "#" };
@@ -697,7 +790,7 @@ namespace HermesProxy.World
 
         public static void LoadAutoRepeatSpells()
         {
-            var path = Path.Combine("CSV", $"AutoRepeatSpells{ModernVersion.GetExpansionVersion()}.csv");
+            var path = Path.Combine("CSV", $"AutoRepeatSpells{ModernVersion.ExpansionVersion}.csv");
             using (TextFieldParser csvParser = new TextFieldParser(path))
             {
                 csvParser.CommentTokens = new string[] { "#" };
@@ -719,7 +812,7 @@ namespace HermesProxy.World
         }
         public static void LoadTaxiPaths()
         {
-            var path = Path.Combine("CSV", $"TaxiPath{ModernVersion.GetExpansionVersion()}.csv");
+            var path = Path.Combine("CSV", $"TaxiPath{ModernVersion.ExpansionVersion}.csv");
             using (TextFieldParser csvParser = new TextFieldParser(path))
             {
                 csvParser.CommentTokens = new string[] { "#" };
@@ -750,7 +843,7 @@ namespace HermesProxy.World
         {
             // Load TaxiNodes (used in calculating first and last parts of path)
             Dictionary<uint, TaxiNode> TaxiNodes = new Dictionary<uint, TaxiNode>();
-            var pathNodes = Path.Combine("CSV", $"TaxiNodes{ModernVersion.GetExpansionVersion()}.csv");
+            var pathNodes = Path.Combine("CSV", $"TaxiNodes{ModernVersion.ExpansionVersion}.csv");
             using (TextFieldParser csvParser = new TextFieldParser(pathNodes))
             {
                 csvParser.CommentTokens = new string[] { "#" };
@@ -776,7 +869,7 @@ namespace HermesProxy.World
             }
             // Load TaxiPathNode (used in calculating rest of path)
             Dictionary<uint, TaxiPathNode> TaxiPathNodes = new Dictionary<uint, TaxiPathNode>();
-            var pathPathNodes = Path.Combine("CSV", $"TaxiPathNode{ModernVersion.GetExpansionVersion()}.csv");
+            var pathPathNodes = Path.Combine("CSV", $"TaxiPathNode{ModernVersion.ExpansionVersion}.csv");
             using (TextFieldParser csvParser = new TextFieldParser(pathPathNodes))
             {
                 csvParser.CommentTokens = new string[] { "#" };
@@ -867,6 +960,33 @@ namespace HermesProxy.World
                 }
             }
         }
+
+        public static void LoadQuestBits()
+        {
+            var path = Path.Combine("CSV", $"QuestV2_{ModernVersion.ExpansionVersion}.csv");
+            using (TextFieldParser csvParser = new TextFieldParser(path))
+            {
+                csvParser.CommentTokens = new string[] { "#" };
+                csvParser.SetDelimiters(new string[] { "," });
+                csvParser.HasFieldsEnclosedInQuotes = false;
+
+                // Skip the row with the column names
+                csvParser.ReadLine();
+
+                while (!csvParser.EndOfData)
+                {
+                    // Read current line fields, pointer moves to the next line.
+                    string[] fields = csvParser.ReadFields();
+
+                    uint questId = UInt32.Parse(fields[0]);
+                    if (fields[1].StartsWith("-"))
+                        continue; // Some bits have a negative index, is this an error from WDBX?
+                    uint uniqueBitFlag = UInt32.Parse(fields[1]);
+                    QuestBits.Add(questId, uniqueBitFlag);
+                }
+            }
+        }
+        
         #endregion
         #region HotFixes
         // Stores
@@ -907,7 +1027,7 @@ namespace HermesProxy.World
         
         public static void LoadAreaTriggerHotfixes()
         {
-            var path = Path.Combine("CSV", "Hotfix", $"AreaTrigger{ModernVersion.GetExpansionVersion()}.csv");
+            var path = Path.Combine("CSV", "Hotfix", $"AreaTrigger{ModernVersion.ExpansionVersion}.csv");
             using (TextFieldParser csvParser = new TextFieldParser(path))
             {
                 csvParser.CommentTokens = new string[] { "#" };
@@ -975,7 +1095,7 @@ namespace HermesProxy.World
         }
         public static void LoadSkillLineHotfixes()
         {
-            var path = Path.Combine("CSV", "Hotfix", $"SkillLine{ModernVersion.GetExpansionVersion()}.csv");
+            var path = Path.Combine("CSV", "Hotfix", $"SkillLine{ModernVersion.ExpansionVersion}.csv");
             using (TextFieldParser csvParser = new TextFieldParser(path))
             {
                 csvParser.CommentTokens = new string[] { "#" };
@@ -1032,7 +1152,7 @@ namespace HermesProxy.World
         }
         public static void LoadSkillRaceClassInfoHotfixes()
         {
-            var path = Path.Combine("CSV", "Hotfix", $"SkillRaceClassInfo{ModernVersion.GetExpansionVersion()}.csv");
+            var path = Path.Combine("CSV", "Hotfix", $"SkillRaceClassInfo{ModernVersion.ExpansionVersion}.csv");
             using (TextFieldParser csvParser = new TextFieldParser(path))
             {
                 csvParser.CommentTokens = new string[] { "#" };
@@ -1078,7 +1198,7 @@ namespace HermesProxy.World
         }
         public static void LoadSkillLineAbilityHotfixes()
         {
-            var path = Path.Combine("CSV", "Hotfix", $"SkillLineAbility{ModernVersion.GetExpansionVersion()}.csv");
+            var path = Path.Combine("CSV", "Hotfix", $"SkillLineAbility{ModernVersion.ExpansionVersion}.csv");
             using (TextFieldParser csvParser = new TextFieldParser(path))
             {
                 csvParser.CommentTokens = new string[] { "#" };
@@ -1144,7 +1264,7 @@ namespace HermesProxy.World
         }
         public static void LoadSpellHotfixes()
         {
-            var path = Path.Combine("CSV", "Hotfix", $"Spell{ModernVersion.GetExpansionVersion()}.csv");
+            var path = Path.Combine("CSV", "Hotfix", $"Spell{ModernVersion.ExpansionVersion}.csv");
             using (TextFieldParser csvParser = new TextFieldParser(path))
             {
                 csvParser.CommentTokens = new string[] { "#" };
@@ -1182,7 +1302,7 @@ namespace HermesProxy.World
         }
         public static void LoadSpellNameHotfixes()
         {
-            var path = Path.Combine("CSV", "Hotfix", $"SpellName{ModernVersion.GetExpansionVersion()}.csv");
+            var path = Path.Combine("CSV", "Hotfix", $"SpellName{ModernVersion.ExpansionVersion}.csv");
             using (TextFieldParser csvParser = new TextFieldParser(path))
             {
                 csvParser.CommentTokens = new string[] { "#" };
@@ -1216,7 +1336,7 @@ namespace HermesProxy.World
         }
         public static void LoadSpellLevelsHotfixes()
         {
-            var path = Path.Combine("CSV", "Hotfix", $"SpellLevels{ModernVersion.GetExpansionVersion()}.csv");
+            var path = Path.Combine("CSV", "Hotfix", $"SpellLevels{ModernVersion.ExpansionVersion}.csv");
             using (TextFieldParser csvParser = new TextFieldParser(path))
             {
                 csvParser.CommentTokens = new string[] { "#" };
@@ -1260,7 +1380,7 @@ namespace HermesProxy.World
         }
         public static void LoadSpellAuraOptionsHotfixes()
         {
-            var path = Path.Combine("CSV", "Hotfix", $"SpellAuraOptions{ModernVersion.GetExpansionVersion()}.csv");
+            var path = Path.Combine("CSV", "Hotfix", $"SpellAuraOptions{ModernVersion.ExpansionVersion}.csv");
             using (TextFieldParser csvParser = new TextFieldParser(path))
             {
                 csvParser.CommentTokens = new string[] { "#" };
@@ -1310,7 +1430,7 @@ namespace HermesProxy.World
         }
         public static void LoadSpellMiscHotfixes()
         {
-            var path = Path.Combine("CSV", "Hotfix", $"SpellMisc{ModernVersion.GetExpansionVersion()}.csv");
+            var path = Path.Combine("CSV", "Hotfix", $"SpellMisc{ModernVersion.ExpansionVersion}.csv");
             using (TextFieldParser csvParser = new TextFieldParser(path))
             {
                 csvParser.CommentTokens = new string[] { "#" };
@@ -1392,7 +1512,7 @@ namespace HermesProxy.World
         }
         public static void LoadSpellEffectHotfixes()
         {
-            var path = Path.Combine("CSV", "Hotfix", $"SpellEffect{ModernVersion.GetExpansionVersion()}.csv");
+            var path = Path.Combine("CSV", "Hotfix", $"SpellEffect{ModernVersion.ExpansionVersion}.csv");
             using (TextFieldParser csvParser = new TextFieldParser(path))
             {
                 csvParser.CommentTokens = new string[] { "#" };
@@ -1494,7 +1614,7 @@ namespace HermesProxy.World
         }
         public static void LoadSpellXSpellVisualHotfixes()
         {
-            var path = Path.Combine("CSV", "Hotfix", $"SpellXSpellVisual{ModernVersion.GetExpansionVersion()}.csv");
+            var path = Path.Combine("CSV", "Hotfix", $"SpellXSpellVisual{ModernVersion.ExpansionVersion}.csv");
             using (TextFieldParser csvParser = new TextFieldParser(path))
             {
                 csvParser.CommentTokens = new string[] { "#" };
@@ -1556,7 +1676,7 @@ namespace HermesProxy.World
         }
         public static void LoadItemSparseHotfixes()
         {
-            var path = Path.Combine("CSV", "Hotfix", $"ItemSparse{ModernVersion.GetExpansionVersion()}.csv");
+            var path = Path.Combine("CSV", "Hotfix", $"ItemSparse{ModernVersion.ExpansionVersion}.csv");
             using (TextFieldParser csvParser = new TextFieldParser(path))
             {
                 csvParser.CommentTokens = new string[] { "#" };
@@ -1840,7 +1960,7 @@ namespace HermesProxy.World
         }
         public static void LoadCreatureDisplayInfoHotfixes()
         {
-            var path = Path.Combine("CSV", "Hotfix", $"CreatureDisplayInfo{ModernVersion.GetExpansionVersion()}.csv");
+            var path = Path.Combine("CSV", "Hotfix", $"CreatureDisplayInfo{ModernVersion.ExpansionVersion}.csv");
             using (TextFieldParser csvParser = new TextFieldParser(path))
             {
                 csvParser.CommentTokens = new string[] { "#" };
@@ -1925,7 +2045,7 @@ namespace HermesProxy.World
         }
         public static void LoadCreatureDisplayInfoExtraHotfixes()
         {
-            var path = Path.Combine("CSV", "Hotfix", $"CreatureDisplayInfoExtra{ModernVersion.GetExpansionVersion()}.csv");
+            var path = Path.Combine("CSV", "Hotfix", $"CreatureDisplayInfoExtra{ModernVersion.ExpansionVersion}.csv");
             using (TextFieldParser csvParser = new TextFieldParser(path))
             {
                 csvParser.CommentTokens = new string[] { "#" };
@@ -1986,7 +2106,7 @@ namespace HermesProxy.World
         }
         public static void LoadCreatureDisplayInfoOptionHotfixes()
         {
-            var path = Path.Combine("CSV", "Hotfix", $"CreatureDisplayInfoOption{ModernVersion.GetExpansionVersion()}.csv");
+            var path = Path.Combine("CSV", "Hotfix", $"CreatureDisplayInfoOption{ModernVersion.ExpansionVersion}.csv");
             using (TextFieldParser csvParser = new TextFieldParser(path))
             {
                 csvParser.CommentTokens = new string[] { "#" };
@@ -2069,6 +2189,13 @@ namespace HermesProxy.World
         public uint flags;
         public uint delay;
     }
+    public class ChatChannel
+    {
+        public uint Id;
+        public ChannelFlags Flags;
+        public string Name;
+    }
+
     // Hotfix structures
     public class AreaTrigger
     {

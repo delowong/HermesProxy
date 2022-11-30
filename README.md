@@ -15,12 +15,25 @@ There are 4 major components to the application:
 | 1.14.0          | 1.12.1          |
 | 2.5.2           | 2.4.3           |
 
+## Ingame Settings
+Note: Keep `Optimize Network for Speed` **enabled** (it's under `System` -> `Network`), otherwise you will get kicked every now and then.
+
 ## Usage Instructions
 
 - Edit the app's config to specify the exact versions of your game client and the remote server, along with the address.
 - Go into your game folder, in the Classic or Classic Era subdirectory, and edit WTF/Config.wtf to set the portal to 127.0.0.1.
-- Download the static auth seed branch of the [Arctium Launcher](https://github.com/Arctium/WoW-Launcher/tree/static-auth-seed) into the main game folder, and then run it with the `--version=ClassicEra` (or Classic for TBC) argument.
+- Download [Arctium Launcher](https://github.com/Arctium/WoW-Launcher/releases/tag/latest) into the main game folder, and then run it  
+with `--staticseed --version=ClassicEra` for vanilla  
+or `--staticseed --version=Classic` for TBC.
 - Start the proxy app and login through the game with your usual credentials.
+
+## Chat commands
+HermesProxy provides some internal chat commands:
+
+| Command                    | Description                                                                  |
+|----------------------------|------------------------------------------------------------------------------|
+| `!qcomplete <questId>`     | Manually marks a quest as already completed (useful for quest helper addons) |
+| `!quncomplete <questId>`   | Unmarks a quest as completed                                                 |
 
 ## Acknowledgements
 
@@ -28,6 +41,3 @@ Parts of this poject's code are based on [CypherCore](https://github.com/CypherC
 
 ## Download HermesProxy
 Stable Downloads: [Releases](https://github.com/WowLegacyCore/HermesProxy/releases)
-
-Latest Downloads (development, unstable): [Build Artifacts](https://github.com/WowLegacyCore/HermesProxy/actions/workflows/Build_Proxy.yml?query=branch%3Amaster)  
-(click at the latest successful build and look at the artifacts at the bottom)

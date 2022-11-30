@@ -31,8 +31,8 @@ namespace HermesProxy.World.Server.Packets
         public override void Write()
         {
             _worldPacket.WriteUInt32(MapID);
+            _worldPacket.WriteUInt32(ZoneID);
             _worldPacket.WriteUInt32(AreaID);
-            _worldPacket.WriteUInt32(SubareaID);
 
             _worldPacket.WriteInt32(Worldstates.Count);
             foreach (WorldStateInfo wsi in Worldstates)
@@ -64,7 +64,7 @@ namespace HermesProxy.World.Server.Packets
 
         public void AddClassicStates()
         {
-            if (ModernVersion.GetExpansionVersion() == 1)
+            if (ModernVersion.ExpansionVersion == 1)
             {
                 AddMissingState(17101, 1);
                 AddMissingState(17222, 1);
@@ -149,8 +149,8 @@ namespace HermesProxy.World.Server.Packets
             }
         }
 
+        public uint ZoneID;
         public uint AreaID;
-        public uint SubareaID;
         public uint MapID;
 
         List<WorldStateInfo> Worldstates = new();

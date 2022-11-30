@@ -40,19 +40,24 @@ namespace HermesProxy
         public bool IsWaitingForNewWorld;
         public bool IsFirstEnterWorld;
         public bool IsConnectedToInstance;
+        public Queue<ServerPacket> PendingUninstancedPackets = new(); // Here packets are queued while IsConnectedToInstance = false;
         public bool IsInWorld;
         public uint? CurrentMapId;
+        public uint CurrentZoneId;
         public uint CurrentTaxiNode;
         public List<byte> UsableTaxiNodes = new();
         public uint PendingTransferMapId;
         public uint LastEnteredAreaTrigger;
         public uint LastDispellSpellId;
+        public string LeftChannelName = "";
         public bool IsPassingOnLoot;
         public int GroupUpdateCounter;
         public uint GroupReadyCheckResponses;
         public World.Server.Packets.PartyUpdate[] CurrentGroups = new World.Server.Packets.PartyUpdate[2];
         public WowGuid128 CurrentPlayerGuid;
         public long CurrentPlayerCreateTime;
+        public OwnCharacterInfo CurrentPlayerInfo;
+        public CurrentPlayerStorage CurrentPlayerStorage;
         public uint CurrentGuildCreateTime;
         public uint CurrentGuildNumAccounts;
         public WowGuid128 CurrentInteractedWithNPC;
@@ -92,12 +97,25 @@ namespace HermesProxy
         public Dictionary<uint, uint> DailyQuestsDone = new Dictionary<uint, uint>();
         public HashSet<WowGuid128> FlagCarrierGuids = new HashSet<WowGuid128>();
         public Dictionary<WowGuid64, ushort> ObjectSpawnCount = new Dictionary<WowGuid64, ushort>();
+        public HashSet<WowGuid64> DespawnedGameObjects = new();
         public HashSet<WowGuid128> HunterPetGuids = new HashSet<WowGuid128>();
         public Dictionary<WowGuid128, Array<ArenaTeamInspectData>> PlayerArenaTeams = new Dictionary<WowGuid128, Array<ArenaTeamInspectData>>();
         public HashSet<string> AddonPrefixes = new HashSet<string>();
         public Dictionary<byte, Dictionary<byte, int>> FlatSpellMods = new Dictionary<byte, Dictionary<byte, int>>();
         public Dictionary<byte, Dictionary<byte, int>> PctSpellMods = new Dictionary<byte, Dictionary<byte, int>>();
 
+        private GameSessionData()
+        {
+            
+        }
+
+        public static GameSessionData CreateNewGameSessionData(GlobalSessionData globalSession)
+        {
+            var self = new GameSessionData();
+            self.CurrentPlayerStorage = new CurrentPlayerStorage(globalSession);
+            return self;
+        }
+        
         public uint GetCurrentGroupSize()
         {
             var group = GetCurrentGroup();
@@ -593,6 +611,54 @@ namespace HermesProxy
             return Class.Warrior;
         }
 
+        public int GetLegacyFieldValueInt32<T>(WowGuid128 guid, T field)
+        {
+            int fieldIndex = LegacyVersion.GetUpdateField(field);
+            if (fieldIndex < 0)
+                return 0;
+
+            var updates = GetCachedObjectFieldsLegacy(guid);
+            if (updates == null)
+                return 0;
+
+            if (!updates.ContainsKey(fieldIndex))
+                return 0;
+
+            return updates[fieldIndex].Int32Value;
+        }
+
+        public uint GetLegacyFieldValueUInt32<T>(WowGuid128 guid, T field)
+        {
+            int fieldIndex = LegacyVersion.GetUpdateField(field);
+            if (fieldIndex < 0)
+                return 0;
+
+            var updates = GetCachedObjectFieldsLegacy(guid);
+            if (updates == null)
+                return 0;
+
+            if (!updates.ContainsKey(fieldIndex))
+                return 0;
+
+            return updates[fieldIndex].UInt32Value;
+        }
+
+        public float GetLegacyFieldValueFloat<T>(WowGuid128 guid, T field)
+        {
+            int fieldIndex = LegacyVersion.GetUpdateField(field);
+            if (fieldIndex < 0)
+                return 0;
+
+            var updates = GetCachedObjectFieldsLegacy(guid);
+            if (updates == null)
+                return 0;
+
+            if (!updates.ContainsKey(fieldIndex))
+                return 0;
+
+            return updates[fieldIndex].FloatValue;
+        }
+
         public Dictionary<int, UpdateField> GetCachedObjectFieldsLegacy(WowGuid128 guid)
         {
             Dictionary<int, UpdateField> dict;
@@ -656,7 +722,7 @@ namespace HermesProxy
         public string Locale;
         public string OS;
         public uint Build;
-        public GameSessionData GameState = new();
+        public GameSessionData GameState;
         
         public RealmId RealmId;
         public RealmManager RealmManager = new();
@@ -674,6 +740,11 @@ namespace HermesProxy
         public Dictionary<string, WowGuid128> GuildsByName = new();
         public Dictionary<uint, List<string>> GuildRanks = new();
 
+        public GlobalSessionData()
+        {
+            GameState = GameSessionData.CreateNewGameSessionData(this);
+        }
+        
         public void StoreGuildRankNames(uint guildId, List<string> ranks)
         {
             if (GuildRanks.ContainsKey(guildId))
@@ -761,7 +832,7 @@ namespace HermesProxy
                 InstanceSocket = null;
             }
 
-            GameState = new();
+            GameState = GameSessionData.CreateNewGameSessionData(this);
         }
     }
 }

@@ -4,100 +4,147 @@ using Framework.Networking;
 using HermesProxy.World;
 using HermesProxy.World.Server;
 using System;
+using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
+using System.Net;
+using System.Net.Http;
+using System.Text.Json;
+using System.Threading;
+using System.Threading.Tasks;
 using BNetServer;
+using Framework;
 
 namespace HermesProxy
 {
-    class Server
+    partial class Server
     {
-        static void Main()
+        static void Main(string[] args)
         {
             //Set Culture
             CultureInfo.DefaultThreadCurrentCulture = CultureInfo.InvariantCulture;
-            System.Threading.Thread.CurrentThread.CurrentCulture = CultureInfo.InvariantCulture;
+            Thread.CurrentThread.CurrentCulture = CultureInfo.InvariantCulture;
+
+#if !DEBUG
+            if (!args.Any(a => a.Trim().Contains("--no-version-check")))
+                CheckForUpdate().Wait();
+#endif
+
             Log.Print(LogType.Server, "Starting Hermes Proxy...");
             Log.Print(LogType.Server, $"Version {GetVersionInformation()}");
             Log.Start();
-            
+
+            if (!Settings.VerifyConfig())
+            {
+                Console.WriteLine("The verification of the config failed");
+                Environment.Exit(1);
+            }
+            Log.DebugLogEnabled = Settings.DebugOutput;
+
             GameData.LoadEverything();
 
-            string bindIp = "0.0.0.0";
+            var bindIp = NetworkUtils.ResolveOrDirectIp(Settings.ExternalAddress);
+            if (!IPAddress.IsLoopback(bindIp))
+                bindIp = IPAddress.Any; // If we are not listening on localhost we have to expose our services
 
-            var restSocketServer = new SocketManager<BnetRestApiSession>();
-            int restPort = Framework.Settings.RestPort;
-            if (restPort < 0 || restPort > 0xFFFF)
-            {
-                Log.Print(LogType.Network, $"Specified login service port ({restPort}) out of allowed range (1-65535), defaulting to 8081");
-                restPort = 8081;
-            }
-
-            Log.Print(LogType.Server, "Starting REST service...");
-            if (!restSocketServer.StartNetwork(bindIp, restPort))
-            {
-                Log.Print(LogType.Server, "Failed to initialize Rest Socket Server");
-                ExitNow();
-            }
-
-            Log.Print(LogType.Server, "Starting Login service...");
+            // LoginServiceManager holds our external IPs so that other player can connect to our Hermes instance
             LoginServiceManager.Instance.Initialize();
 
-            var sessionSocketServer = new SocketManager<BnetTcpSession>();
-            // Start the listening port (acceptor) for auth connections
-            int bnPort = Framework.Settings.BNetPort;
-            if (bnPort < 0 || bnPort > 0xFFFF)
+            // 1. Start the listener for binary bnet RPC service connections
+            var bnetSocketServer = StartServer<BnetTcpSession>(new IPEndPoint(bindIp, Settings.BNetPort));
+
+            // 2. Start the listener for http(s) bnet RPC service like auth/"realm" connections
+            var restSocketServer = StartServer<BnetRestApiSession>(new IPEndPoint(bindIp, Settings.RestPort));
+
+            // 3. Start the listener for realm connections
+            var realmSocketServer = StartServer<RealmSocket>(new IPEndPoint(bindIp, Settings.RealmPort));
+
+            // 4. Start the listener for world connections
+            var worldSocketServer = StartServer<WorldSocket>(new IPEndPoint(bindIp, Settings.InstancePort));
+
+            while (restSocketServer.IsListening || bnetSocketServer.IsListening || realmSocketServer.IsListening || worldSocketServer.IsListening)
             {
-                Log.Print(LogType.Server, $"Specified battle.net port ({bnPort}) out of allowed range (1-65535)");
-                ExitNow();
+                Thread.Sleep(TimeSpan.FromSeconds(10));
             }
 
-            Log.Print(LogType.Server, $"BNet Listening on {bindIp}:{bnPort}...");
-            if (!sessionSocketServer.StartNetwork(bindIp, bnPort))
+            Console.WriteLine($"(restSocketServer.IsListening: {restSocketServer.IsListening}");
+            Console.WriteLine($"(bnetSocketServer.IsListening: {bnetSocketServer.IsListening}");
+            Console.WriteLine($"(realmSocketServer.IsListening: {realmSocketServer.IsListening}");
+            Console.WriteLine($"(worldSocketServer.IsListening: {worldSocketServer.IsListening}");
+
+            ExitNow();
+        }
+
+        private static SocketManager<TSocketType> StartServer<TSocketType>(IPEndPoint bindIp) where TSocketType : ISocket
+        {
+            var socketManager = new SocketManager<TSocketType>();
+
+            Log.Print(LogType.Server, $"Starting {typeof(TSocketType).Name} service on {bindIp}...");
+            if (!socketManager.StartNetwork(bindIp.Address.ToString(), bindIp.Port))
             {
-                Log.Print(LogType.Network, "Failed to start BNet socket manager");
-                ExitNow();
+                throw new Exception($"Failed to start {typeof(TSocketType).Name} service");
             }
 
-            // Launch the worldserver listener socket
-            int worldPort = Framework.Settings.RealmPort;
-            if (worldPort < 0 || worldPort > 0xFFFF)
-            {
-                Log.Print(LogType.Server, $"Specified Realm port ({worldPort}) out of allowed range (1-65535)");
-                ExitNow();
-            }
+            Thread.Sleep(50); // Lets wait until the thread has been logged
 
-            int instancePort = Framework.Settings.InstancePort;
-            if (instancePort < 0 || instancePort > 0xFFFF)
-            {
-                Log.Print(LogType.Server, $"Specified Instance port ({instancePort}) out of allowed range (1-65535)");
-                ExitNow();
-            }
-
-            if (worldPort == instancePort)
-            {
-                Log.Print(LogType.Server, $"Realm and Instance sockets cannot use the same port");
-                ExitNow();
-            }
-
-            Log.Print(LogType.Server, $"World Listening on {bindIp}:{worldPort}...");
-            var worldSocketMgr = new WorldSocketManager();
-            if (!worldSocketMgr.StartNetwork(bindIp, worldPort))
-            {
-                Log.Print(LogType.Network, "Failed to start World socket manager");
-                ExitNow();
-            }
+            return socketManager;
         }
 
         static void ExitNow()
         {
             Console.WriteLine("Halting process...");
-            System.Threading.Thread.Sleep(10_000);
+            Thread.Sleep(10_000);
             Environment.Exit(-1);
         }
 
+        private static async Task CheckForUpdate()
+        {
+            const string hermesGitHubRepo = "WowLegacyCore/HermesProxy";
+
+            try
+            {
+                if (GitVersionInformation.CommitsSinceVersionSource != "0" || GitVersionInformation.UncommittedChanges != "0")
+                    return; // we are probably in a test branch
+
+                using var client = new HttpClient();
+                client.Timeout = TimeSpan.FromSeconds(5);
+                client.DefaultRequestHeaders.Add("User-Agent", "curl/7.0.0"); // otherwise we get blocked
+                var response = await client.GetAsync($"https://api.github.com/repos/{hermesGitHubRepo}/releases/latest");
+                response.EnsureSuccessStatusCode();
+
+                string rawJson = await response.Content.ReadAsStringAsync();
+                var parsedJson = JsonSerializer.Deserialize<Dictionary<string, object>>(rawJson);
+
+                string commitDateStr = parsedJson!["created_at"].ToString();
+                DateTime commitDate = DateTime.Parse(commitDateStr!, CultureInfo.InvariantCulture).ToUniversalTime();;
+
+                string myCommitDateStr = GitVersionInformation.CommitDate;
+                DateTime myCommitDate = DateTime.Parse(myCommitDateStr, CultureInfo.InvariantCulture).ToUniversalTime();;
+
+                if (commitDate > myCommitDate)
+                {
+                    Console.WriteLine("------------------------");
+                    Console.ForegroundColor = ConsoleColor.Yellow;
+                    Console.WriteLine($"HermesProxy update available v{GitVersionInformation.Major}.{GitVersionInformation.Minor} => {parsedJson!["tag_name"]} ({commitDate:yyyy-MM-dd})");
+                    Console.WriteLine("Please download new version from https://github.com/WowLegacyCore/HermesProxy/releases/latest");
+                    Console.ResetColor();
+                    Console.WriteLine("------------------------");
+                    Console.WriteLine();
+                    Thread.Sleep(10_000);
+                }
+            }
+            catch
+            {
+                // ignore
+            }
+        }
+
+        private static readonly string? _buildTag;
         private static string GetVersionInformation()
         {
-            string version = $"{GitVersionInformation.CommitDate} {GitVersionInformation.MajorMinorPatch}";
+            var commitDate = DateTime.Parse(GitVersionInformation.CommitDate, CultureInfo.InvariantCulture).ToUniversalTime();
+
+            string version = $"{commitDate:yyyy-MM-dd} {_buildTag}{GitVersionInformation.MajorMinorPatch}";
             if (GitVersionInformation.CommitsSinceVersionSource != "0")
                 version += $"+{GitVersionInformation.CommitsSinceVersionSource}({GitVersionInformation.ShortSha})";
             if (GitVersionInformation.UncommittedChanges != "0")

@@ -12,6 +12,7 @@ using Framework.IO;
 using Framework.Logging;
 using HermesProxy.World.Enums;
 using System.Reflection;
+using System.Threading.Tasks;
 using HermesProxy.World.Server;
 
 namespace HermesProxy.World.Client
@@ -112,8 +113,8 @@ namespace HermesProxy.World.Client
 
                 _clientSocket.EndConnect(AR);
                 _clientSocket.ReceiveBufferSize = 65535;
-                byte[] buffer = new byte[LegacyServerPacketHeader.StructSize];
-                _clientSocket.BeginReceive(buffer, 0, buffer.Length, SocketFlags.None, ReceiveCallback, buffer);
+
+                Task.Run(ReceiveLoop);
             }
             catch (Exception ex)
             {
@@ -123,88 +124,72 @@ namespace HermesProxy.World.Client
             }
         }
 
-        private void ReceiveCallback(IAsyncResult AR)
+        private async Task<bool> ReceiveBufferFully(ArraySegment<byte> bufferToFill)
+        {
+            int alreadyReceived = 0;
+            while (alreadyReceived < bufferToFill.Count)
+            {
+                var tmpArrayBuffer = new ArraySegment<byte>(bufferToFill.Array!, alreadyReceived + bufferToFill.Offset, bufferToFill.Count - alreadyReceived);
+                int receive = await _clientSocket.ReceiveAsync(tmpArrayBuffer, SocketFlags.None);
+                if (receive == 0)
+                    return false;
+                alreadyReceived += receive;
+            }
+
+            return true;
+        }
+
+        private async Task ReceiveLoop()
         {
             try
             {
-                int received = _clientSocket.EndReceive(AR);
-
-                if (received == 0)
+                while (true)
                 {
-                    Log.PrintNet(LogType.Error, LogNetDir.S2P, "Socket Closed By Server");
-                    if (_isSuccessful == null)
-                        _isSuccessful = false;
-                    else if (GetSession().WorldClient == this)
-                        GetSession().OnDisconnect();
-                    return;
-                }
-
-                if (received != LegacyServerPacketHeader.StructSize)
-                {
-                    Log.PrintNet(LogType.Error, LogNetDir.S2P, $"Received {received} bytes when reading header!");
-                    if (_isSuccessful == null)
-                        _isSuccessful = false;
-                    else
-                        GetSession().OnDisconnect();
-                    return;
-                }
-
-                byte[] headerBuffer = (byte[])AR.AsyncState;
-
-                if (_worldCrypt != null)
-                    _worldCrypt.Decrypt(headerBuffer, LegacyServerPacketHeader.StructSize);
-
-                LegacyServerPacketHeader header = new LegacyServerPacketHeader();
-                header.Read(headerBuffer);
-                ushort packetSize = header.Size;
-
-                if (packetSize != 0)
-                {
-                    if (packetSize > _clientSocket.ReceiveBufferSize)
+                    byte[] headerBuffer = new byte[LegacyServerPacketHeader.StructSize];
+                    if (!await ReceiveBufferFully(headerBuffer))
                     {
-                        Log.PrintNet(LogType.Error, LogNetDir.S2P, "Packet size is greater than max buffer size!");
+                        Log.PrintNet(LogType.Error, LogNetDir.S2P, "Socket Closed By GameWorldServer (header)");
+                        if (_isSuccessful == null)
+                            _isSuccessful = false;
+                        else if (GetSession().WorldClient == this)
+                            GetSession().OnDisconnect();
                         return;
                     }
 
-                    byte[] buffer = new byte[packetSize];
+                    if (_worldCrypt != null)
+                        _worldCrypt.Decrypt(headerBuffer, LegacyServerPacketHeader.StructSize);
 
-                    // copy the opcode into the new buffer
-                    buffer[0] = headerBuffer[2];
-                    buffer[1] = headerBuffer[3];
+                    LegacyServerPacketHeader header = new LegacyServerPacketHeader();
+                    header.Read(headerBuffer);
+                    ushort packetSize = header.Size;
 
-                    received = sizeof(ushort); // size includes opcode and we have it already
-                    while (received != packetSize)
+                    if (packetSize != 0)
                     {
-                        //Log.Print(LogType.Debug, $"Waiting to receive remaining {packetSize - received} bytes.");
+                        byte[] buffer = new byte[packetSize];
 
-                        int receivedNow = _clientSocket.Receive(buffer, received, packetSize - received, SocketFlags.None);
-                        if (receivedNow == 0)
+                        // copy the opcode into the new buffer
+                        buffer[0] = headerBuffer[2];
+                        buffer[1] = headerBuffer[3];
+
+                        if (!await ReceiveBufferFully(new ArraySegment<byte>(buffer, 2, buffer.Length - 2)))
+                        {
+                            Log.PrintNet(LogType.Error, LogNetDir.S2P, "Socket Closed By GameWorldServer (payload)");
+                            if (_isSuccessful == null)
+                                _isSuccessful = false;
+                            else if (GetSession().WorldClient == this)
+                                GetSession().OnDisconnect();
                             return;
+                        }
 
-                        received += receivedNow;
+                        WorldPacket packet = new WorldPacket(buffer);
+                        packet.SetReceiveTime(Environment.TickCount);
+                        HandlePacket(packet);
                     }
-
-                    WorldPacket packet = new WorldPacket(buffer);
-                    packet.SetReceiveTime(Environment.TickCount);
-                    HandlePacket(packet);
                 }
-                else
-                {
-                    Log.PrintNet(LogType.Error, LogNetDir.S2P, "Received an empty packet!");
-                }
-
-                if (!IsConnected())
-                    return;
-
-                headerBuffer = new byte[LegacyServerPacketHeader.StructSize];
-
-                // Start receiving data again.
-                _clientSocket.BeginReceive(headerBuffer, 0, headerBuffer.Length, SocketFlags.None, ReceiveCallback, headerBuffer);
-
             }
-            catch (Exception ex)
+            catch(Exception e)
             {
-                Log.PrintNet(LogType.Error, LogNetDir.S2P, $"Packet Read Error: {ex.Message}{Environment.NewLine}{ex.StackTrace}");
+                Log.PrintNet(LogType.Error, LogNetDir.S2P, $"Packet Read Error: {e.Message}{Environment.NewLine}{e.StackTrace}");
                 if (_isSuccessful == null)
                     _isSuccessful = false;
                 else
@@ -215,20 +200,7 @@ namespace HermesProxy.World.Client
             }
         }
 
-        private void SendCallback(IAsyncResult AR)
-        {
-            try
-            {
-                _clientSocket.EndSend(AR);
-            }
-            catch (Exception ex)
-            {
-                Log.PrintNet(LogType.Error, LogNetDir.P2S, $"Packet Send Error: {ex.Message}");
-                if (_isSuccessful == null)
-                    _isSuccessful = false;
-            }
-        }
-
+        // C P>S: Sends data to world server
         private void SendPacket(WorldPacket packet)
         {
             _sendMutex.WaitOne();
@@ -251,7 +223,7 @@ namespace HermesProxy.World.Client
 
                 buffer.WriteBytes(packet.GetData(), packet.GetSize());
 
-                _clientSocket.BeginSend(buffer.GetData(), 0, (int)buffer.GetSize(), SocketFlags.None, SendCallback, null);
+                _clientSocket.Send(buffer.GetData(), SocketFlags.None);
             }
             catch (Exception ex)
             {
@@ -262,7 +234,7 @@ namespace HermesProxy.World.Client
             _sendMutex.ReleaseMutex();
         }
 
-        private void SendPacketToClient(ServerPacket packet, Opcode delayUntilOpcode = Opcode.MSG_NULL_ACTION)
+        public void SendPacketToClient(ServerPacket packet, Opcode delayUntilOpcode = Opcode.MSG_NULL_ACTION)
         {
             Opcode opcode = packet.GetUniversalOpcode();
             if (delayUntilOpcode != Opcode.MSG_NULL_ACTION)
@@ -284,6 +256,7 @@ namespace HermesProxy.World.Client
 
         private void SendPacketToClientDirect(ServerPacket packet)
         {
+            var pendingPackets = GetSession().GameState.PendingUninstancedPackets;
             if (packet.GetConnection() == ConnectionType.Realm)
             {
                 GetSession().RealmSocket.SendPacket(packet);
@@ -293,8 +266,16 @@ namespace HermesProxy.World.Client
                 if (GetSession().InstanceSocket == null &&
                    !GetSession().GameState.IsConnectedToInstance)
                 {
-                    Log.PrintNet(LogType.Error, LogNetDir.P2C, $"Can't send opcode {packet.GetUniversalOpcode()} ({packet.GetOpcode()}) before entering world!");
-                    return;
+                    lock (pendingPackets)
+                    {
+                        if (GetSession().InstanceSocket == null &&
+                            !GetSession().GameState.IsConnectedToInstance)
+                        {
+                            pendingPackets.Enqueue(packet);
+                            Log.PrintNet(LogType.Warn, LogNetDir.P2C, $"Can't send opcode {packet.GetUniversalOpcode()} ({packet.GetOpcode()}) before entering world! Queue");
+                            return;
+                        }
+                    }
                 }
 
                 // block these packets until connected to instance
@@ -302,8 +283,21 @@ namespace HermesProxy.World.Client
                 {
                     Log.PrintNet(LogType.Network, LogNetDir.P2C, $"Waiting to send {packet.GetUniversalOpcode()} ({packet.GetOpcode()}).");
                     System.Threading.Thread.Sleep(200);
-                };
-                GetSession().InstanceSocket.SendPacket(packet);
+                }
+
+                var socket = GetSession().InstanceSocket;
+                if (pendingPackets.Count > 0)
+                {
+                    lock (pendingPackets)
+                    {
+                        while (pendingPackets.TryDequeue(out var oldPacket))
+                        {
+                            socket.SendPacket(oldPacket);
+                        }
+                    }
+                }
+
+                socket.SendPacket(packet);
             }
         }
 
@@ -366,7 +360,6 @@ namespace HermesProxy.World.Client
                 case Opcode.SMSG_AUTH_RESPONSE:
                     HandleAuthResponse(packet);
                     break;
-                case Opcode.SMSG_PONG:
                 case Opcode.SMSG_ADDON_INFO:
                     break; // don't need to handle
                 default:
