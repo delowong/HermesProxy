@@ -293,10 +293,9 @@ namespace HermesProxy.World.Client
                 packet.ReadUInt8(); // Cast Count
 
             uint spellId = packet.ReadUInt32();
-            // byte reason = 61;
-            // if (LegacyVersion.AddedInVersion(ClientVersionBuild.V3_0_2_9056))
-            //     reason = (byte)LegacyVersion.ConvertSpellCastResult(packet.ReadUInt8());
-            byte reason = (byte)LegacyVersion.ConvertSpellCastResult(packet.ReadUInt8());
+            byte reason = 35;
+            if (LegacyVersion.AddedInVersion(ClientVersionBuild.V3_0_2_9056))
+                reason = (byte)LegacyVersion.ConvertSpellCastResult(packet.ReadUInt8());
 
             WowGuid128 castId;
             uint spellVisual;
