@@ -125,10 +125,6 @@ namespace HermesProxy.World.Server.Packets
                     CreateData.MoveInfo.Flags &= ~(uint)MovementFlagModern.WalkMode;
                 if (CreateData.MoveInfo.FlagsExtra == 0)
                     CreateData.MoveInfo.FlagsExtra = 512;
-                if (CreateData.MoveInfo.Orientation < 0)
-                    CreateData.MoveInfo.Orientation += (float)(Math.PI * 2f);
-                if (CreateData.MoveInfo.Orientation > (float)(Math.PI * 2f))
-                    CreateData.MoveInfo.Orientation -= (float)(Math.PI * 2f);
             }
             if (CreateData.MoveSpline != null)
             {
@@ -167,6 +163,12 @@ namespace HermesProxy.World.Server.Packets
                         CorpseData.ClassId = (byte)GlobalSession.GameState.GetUnitClass(CorpseData.Owner);
                     else
                         CorpseData.ClassId = 1;
+                }
+                if (CorpseData.FactionTemplate == null && CorpseData.Owner != null)
+                {
+                    int ownerFaction = GlobalSession.GameState.GetLegacyFieldValueInt32(CorpseData.Owner, UnitField.UNIT_FIELD_FACTIONTEMPLATE);
+                    if (ownerFaction != 0)
+                        CorpseData.FactionTemplate = ownerFaction;
                 }
             }
             if (UnitData != null)
@@ -372,5 +374,17 @@ namespace HermesProxy.World.Server.Packets
 
         public int Power;
         public byte PowerType;
+    }
+
+    public class ObjectUpdateFailed : ClientPacket
+    {
+        public ObjectUpdateFailed(WorldPacket packet) : base(packet) { }
+
+        public override void Read()
+        {
+            ObjectGuid = _worldPacket.ReadPackedGuid128();
+        }
+
+        public WowGuid128 ObjectGuid;
     }
 }

@@ -818,6 +818,7 @@ namespace HermesProxy.World.Client
                         else if (splineFlags.HasAnyFlag(SplineFlagWotLK.FinalOrientation))
                         {
                             monsterMove.FinalOrientation = packet.ReadFloat();
+                            MovementInfo.ClampOrientation(ref monsterMove.FinalOrientation);
                             monsterMove.SplineType = SplineTypeModern.FacingAngle;
                         }
                         else if (splineFlags.HasAnyFlag(SplineFlagWotLK.FinalPoint))
@@ -840,6 +841,7 @@ namespace HermesProxy.World.Client
                         else if (splineFlags.HasAnyFlag(SplineFlagTBC.FinalOrientation))
                         {
                             monsterMove.FinalOrientation = packet.ReadFloat();
+                            MovementInfo.ClampOrientation(ref monsterMove.FinalOrientation);
                             monsterMove.SplineType = SplineTypeModern.FacingAngle;
                         }
                         else if (splineFlags.HasAnyFlag(SplineFlagTBC.FinalPoint))
@@ -862,6 +864,7 @@ namespace HermesProxy.World.Client
                         else if (splineFlags.HasAnyFlag(SplineFlagVanilla.FinalOrientation))
                         {
                             monsterMove.FinalOrientation = packet.ReadFloat();
+                            MovementInfo.ClampOrientation(ref monsterMove.FinalOrientation);
                             monsterMove.SplineType = SplineTypeModern.FacingAngle;
                         }
                         else if (splineFlags.HasAnyFlag(SplineFlagVanilla.FinalPoint))
@@ -922,12 +925,10 @@ namespace HermesProxy.World.Client
                     moveInfo.TransportGuid = packet.ReadPackedGuid().To128(GetSession().GameState);
 
                     moveInfo.Position = packet.ReadVector3();
-                    moveInfo.TransportOffset.X = packet.ReadFloat();
-                    moveInfo.TransportOffset.Y = packet.ReadFloat();
-                    moveInfo.TransportOffset.Z = packet.ReadFloat();
+                    moveInfo.TransportOffset = packet.ReadVector3();
 
                     moveInfo.Orientation = packet.ReadFloat();
-                    moveInfo.TransportOffset.W = moveInfo.Orientation;
+                    moveInfo.TransportOrientation = moveInfo.Orientation;
 
                     moveInfo.CorpseOrientation = packet.ReadFloat();
                 }
@@ -980,6 +981,7 @@ namespace HermesProxy.World.Client
             if (updateData != null && moveInfo != null)
             {
                 moveInfo.Flags = (uint)(((MovementFlagWotLK)moveInfo.Flags).CastFlags<MovementFlagModern>());
+                moveInfo.ValidateMovementInfo();
                 updateData.CreateData.MoveInfo = moveInfo;
             }
         }
@@ -2852,6 +2854,18 @@ namespace HermesProxy.World.Client
                 if (CORPSE_FIELD_FLAGS >= 0 && updateMaskArray[CORPSE_FIELD_FLAGS])
                 {
                     updateData.CorpseData.Flags = updates[CORPSE_FIELD_FLAGS].UInt32Value;
+
+                    // These flags have a different meaning in modern client.
+                    if (updateData.CorpseData.Flags.HasAnyFlag(CorpseFlags.HideHelm))
+                    {
+                        updateData.CorpseData.Flags &= ~(uint)CorpseFlags.HideHelm;
+                        updateData.CorpseData.Items[EquipmentSlot.Head] = null;
+                    }
+                    if (updateData.CorpseData.Flags.HasAnyFlag(CorpseFlags.HideCloak))
+                    {
+                        updateData.CorpseData.Flags &= ~(uint)CorpseFlags.HideCloak;
+                        updateData.CorpseData.Items[EquipmentSlot.Cloak] = null;
+                    }
                 }
                 int CORPSE_FIELD_DYNAMIC_FLAGS = LegacyVersion.GetUpdateField(CorpseField.CORPSE_FIELD_DYNAMIC_FLAGS);
                 if (CORPSE_FIELD_DYNAMIC_FLAGS >= 0 && updateMaskArray[CORPSE_FIELD_DYNAMIC_FLAGS])
